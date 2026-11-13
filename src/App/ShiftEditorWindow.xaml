@@ -1,0 +1,64 @@
+<Window x:Class="GozcuStandalone.App.ShiftEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Shift" Width="520" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Background="White" FontFamily="Segoe UI" ShowInTaskbar="False">
+    <StackPanel Margin="28,26,28,24">
+        <TextBlock x:Name="Heading" Text="Shift" FontSize="20" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+        <TextBlock Style="{StaticResource Label}" FontSize="13" TextWrapping="Wrap" Margin="0,6,0,16"
+                   Text="A shift sets the working hours and how forgiving the reports are about arriving late or leaving early."/>
+
+        <TextBlock Text="Name" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+        <TextBox x:Name="NameBox"/>
+
+        <Grid Margin="0,14,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="Starts (HH:mm)" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                <TextBox x:Name="StartBox"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Ends (HH:mm)" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                <TextBox x:Name="EndBox"/>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Text="Grace times (minutes)" FontWeight="SemiBold" Foreground="{StaticResource Ink}" Margin="0,20,0,2"/>
+        <TextBlock Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,0,0,10"
+                   Text="Late arrival counts only after the grace time has passed. Overtime counts only after the late-leave grace has passed."/>
+        <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="12"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <StackPanel>
+                <TextBlock Text="Late arrival grace" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                <TextBox x:Name="LateEnterBox"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Early arrival allowed" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                <TextBox x:Name="EarlyEnterBox"/>
+            </StackPanel>
+            <StackPanel Grid.Row="2">
+                <TextBlock Text="Early leave grace" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                <TextBox x:Name="EarlyLeaveBox"/>
+            </StackPanel>
+            <StackPanel Grid.Row="2" Grid.Column="2">
+                <TextBlock Text="Late leave grace (before overtime)" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                <TextBox x:Name="LateLeaveBox"/>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Text="Unpaid break" FontWeight="SemiBold" Foreground="{StaticResource Ink}" Margin="0,20,0,2"/>
+        <TextBlock Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Text="Minutes taken off worked time on a full working day (5 hours or more). Leave at 0 if the break counts as work."/>
+        <TextBox x:Name="BreakBox" Width="120" HorizontalAlignment="Left"/>
+
+        <TextBlock Text="Working days" FontWeight="SemiBold" Foreground="{StaticResource Ink}" Margin="0,20,0,8"/>
+        <WrapPanel x:Name="DaysPanel"/>
+
+        <TextBlock x:Name="ErrorText" Foreground="{StaticResource Bad}" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Content="Cancel" Style="{StaticResource GhostButton}" IsCancel="True" Margin="0,0,10,0"/>
+            <Button Content="Save shift" Style="{StaticResource PrimaryButton}" IsDefault="True" Click="Save_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

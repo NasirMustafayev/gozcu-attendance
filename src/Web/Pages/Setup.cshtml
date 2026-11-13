@@ -1,0 +1,48 @@
+@page
+@inherits WebPage
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@{
+    ViewData["Title"] = T("First-time setup");
+    ViewData["Bare"] = true;
+}
+<div class="card login">
+    <h1 style="font-size:20px">@T("First-time setup")</h1>
+    <p class="sub">@T("Create the administrator account. You can add more people in Settings afterwards.")</p>
+    <form method="post">
+        <label class="f">@T("Your name")<input type="text" name="displayName" value="@DisplayName" required></label>
+        <label class="f">@T("Username")<input type="text" name="username" value="@Username" autocomplete="username" required></label>
+        <label class="f">@T("Password")<input type="password" name="password" autocomplete="new-password" required minlength="8"></label>
+        <label class="f">@T("Repeat password")<input type="password" name="password2" autocomplete="new-password" required minlength="8"></label>
+        <label class="f">@T("Language")
+            <select name="language"><option value="en">English</option><option value="az" selected="@Loc.IsAz">Azərbaycanca</option></select>
+        </label>
+        @if (Error is not null) { <div class="error-text">@Error</div> }
+        <button class="btn primary" type="submit">@T("Create account")</button>
+    </form>
+</div>
+
+@functions {
+    public string? Username { get; set; }
+    public string? DisplayName { get; set; }
+    public string? Error { get; set; }
+
+    public IActionResult OnGet() => Store.CountWebUsers() > 0 ? Redirect("/Login") : Page();
+
+    public async Task<IActionResult> OnPostAsync(string username, string displayName, string password, string password2, string language)
+    {
+        // Only possible while no account exists at all.
+        if (Store.CountWebUsers() > 0) return Redirect("/Login");
+        Username = username;
+        DisplayName = displayName;
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(displayName) || string.IsNullOrEmpty(password)) { Error = T("Fill in every field."); return Page(); }
+        if (password.Length < 8) { Error = T("Use at least 8 characters."); return Page(); }
+        if (password != password2) { Error = T("The passwords do not match."); return Page(); }
+
+        Store.SaveWebUser(username, displayName, AttendanceStore.RoleAdmin, language == "az" ? "az" : "en", password);
+        Store.Log("Info", "Web", $"Web administrator account “{username.Trim()}” created.");
+        var user = Store.GetWebUser(username)!;
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, WebApp.Principal(user));
+        return Redirect("/");
+    }
+}

@@ -1,0 +1,87 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Reports");
+    ViewData["Nav"] = "/Reports";
+    var months = Enumerable.Range(0, 36).Select(i => new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-i)).ToList();
+    var people = Store.GetPeople().Where(p => p.Active && Ctx.Allows(p.Enroll)).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+}
+<h1>@T("Reports")</h1>
+<div class="sub">@Table!.Title · @Table.Subtitle</div>
+
+<form method="get" class="row no-print" style="margin-bottom:14px">
+    <label class="f">@T("Report")
+        <select name="kind" data-autosubmit>
+            @foreach (var (key, label) in Kinds) { <option value="@key" selected="@(Kind == key)">@Loc.T(label)</option> }
+        </select>
+    </label>
+    @if (Kind is "monthly" or "timesheet")
+    {
+        <label class="f">@T("Month")
+            <select name="month" data-autosubmit>@foreach (var m in months) { <option value="@m.ToString("yyyy-MM")" selected="@(m == Month)">@Loc.Dates(m.ToString("MMMM yyyy", CultureInfo.InvariantCulture))</option> }</select>
+        </label>
+    }
+    @if (Kind == "timesheet")
+    {
+        <label class="f">@T("Person")
+            <select name="person" data-autosubmit>@foreach (var p in people) { <option value="@p.Enroll" selected="@(p.Enroll == Person)">@p.Name · @p.Enroll</option> }</select>
+        </label>
+    }
+    @if (Kind is not ("monthly" or "timesheet"))
+    {
+        <label class="f">@T("From")<input type="date" name="from" value="@WebApp.Iso(From)"></label>
+        <label class="f">@T("To")<input type="date" name="to" value="@WebApp.Iso(To)"></label>
+        <button class="btn" type="submit">@T("Show")</button>
+    }
+</form>
+
+<partial name="_ReportTable" model="Table" />
+
+@functions {
+    public static readonly (string Key, string Label)[] Kinds =
+    {
+        ("monthly", "Monthly summary"), ("timesheet", "Person timesheet"), ("absent", "Absences"), ("late", "Late arrivals"),
+        ("early", "Early leave"), ("overtime", "Overtime"), ("corrections", "Manual entries and voided scans"),
+    };
+
+    public string Kind { get; set; } = "monthly";
+    public DateTime Month { get; set; }
+    public uint? Person { get; set; }
+    public DateTime From { get; set; }
+    public DateTime To { get; set; }
+    public ReportTable? Table { get; set; }
+
+    private void Build(string? kind, string? month, uint? person, string? from, string? to)
+    {
+        Kind = Kinds.Any(k => k.Key == kind) ? kind! : "monthly";
+        Month = DateTime.TryParseExact((month ?? "") + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var m)
+            ? m : new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        To = ParseDate(to) ?? DateTime.Today;
+        From = ParseDate(from) ?? To.AddDays(-29);
+        if (To < From) (From, To) = (To, From);
+        var ctx = Ctx;
+        Person = person ?? ctx.ActivePeople.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).Select(p => (uint?)p.Enroll).FirstOrDefault();
+
+        var table = Kind switch
+        {
+            "timesheet" when Person is { } id => Reports.Timesheet(ctx, id, Month),
+            "timesheet" => new ReportTable { Title = "Person timesheet", Subtitle = Loc.T("Choose a person."), Headers = { "Date" } },
+            "absent" => Reports.Absent(ctx, From, To),
+            "late" => Reports.Late(ctx, From, To),
+            "early" => Reports.EarlyLeave(ctx, From, To),
+            "overtime" => Reports.Overtime(ctx, From, To),
+            "corrections" => Reports.Corrections(ctx, From, To),
+            _ => Reports.Monthly(ctx, Month),
+        };
+        Table = Loc.Localize(table);
+    }
+
+    public void OnGet(string? kind, string? month, uint? person, string? from, string? to) => Build(kind, month, person, from, to);
+
+    public IActionResult OnGetExport(string? kind, string? month, uint? person, string? from, string? to, string? fmt)
+    {
+        Build(kind, month, person, from, to);
+        var name = new string(Table!.Title.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray()).Trim('_');
+        return Export(Table, fmt, name);
+    }
+}

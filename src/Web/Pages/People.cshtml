@@ -1,0 +1,140 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("People");
+    ViewData["Nav"] = "/People";
+    var ctx = Ctx;
+    var depts = Store.GetDepartments().OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    var deptOf = Store.GetPersonDepartments();
+    var people = Store.GetPeople().Where(p => (ShowFormer || p.Active) && ctx.Allows(p.Enroll))
+        .OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    var unnamed = CanEditData ? Store.GetUnnamedIds(60) : new();
+}
+<h1>@T("People")</h1>
+<div class="sub">@T("Enroll a person on the device under their ID number, then add them here.")</div>
+
+<div class="row no-print" style="margin-bottom:14px">
+    @if (CanEditData)
+    {
+        <form method="post" asp-page-handler="Add" class="row">
+            <label class="f">@T("ID")<input type="number" name="id" min="1" style="width:90px" required></label>
+            <label class="f">@T("Name")<input type="text" name="name" style="width:220px" required></label>
+            <button class="btn primary">@T("Add person")</button>
+        </form>
+        <a class="btn" href="/Departments">@T("Departments…")</a>
+        <span class="muted" style="align-self:center">
+            @(unnamed.Count > 0 ? Loc.F("{0} unnamed ID(s) · next free ID: {1}", unnamed.Count, Store.NextFreeId()) : Loc.F("No unnamed IDs · next free ID: {0}", Store.NextFreeId()))
+        </span>
+    }
+    <span class="spacer"></span>
+    <label class="f">@T("Filter")<input type="search" data-filter="#people-table" style="width:200px"></label>
+    <form method="get"><label class="check" style="min-height:38px"><input type="checkbox" name="former" value="1" checked="@ShowFormer" data-autosubmit> @T("Show former")</label></form>
+</div>
+
+@if (CanEditData && unnamed.Count > 0)
+{
+    <div class="card" style="margin-bottom:14px">
+        <div class="muted" style="margin-bottom:8px">@T("IDs that scanned on the device but have no name yet. Pick one to fill in the ID.")</div>
+        @foreach (var u in unnamed.Take(20))
+        {
+            <span class="pill" style="margin:2px">@Loc.F("ID {0} · {1} scan(s) · last {2}", u.Enroll, u.Scans, Loc.Dates(u.Last.ToString("d MMM HH:mm", CultureInfo.InvariantCulture)))</span>
+        }
+    </div>
+}
+
+<div class="card flush">
+    <div class="table-wrap">
+        <table id="people-table">
+            <thead><tr><th>@T("ID")</th><th>@T("STATUS")</th><th>@T("NAME")</th><th>@T("DEPARTMENT")</th>@if (CanEditData) { <th class="no-print">@T("Actions")</th> }</tr></thead>
+            <tbody>
+                @foreach (var p in people)
+                {
+                    <tr>
+                        <td>@p.Enroll</td>
+                        <td>@if (p.Active) { <span class="pill finger">@T("Active")</span> } else { <span class="pill">@T("Former")</span> }</td>
+                        @if (CanEditData)
+                        {
+                            <td>
+                                <form method="post" asp-page-handler="Rename" class="row" style="gap:6px">
+                                    <input type="hidden" name="id" value="@p.Enroll">
+                                    <input type="text" name="name" value="@p.Name" style="width:240px">
+                                    <button class="btn small">@T("Save")</button>
+                                </form>
+                            </td>
+                            <td>
+                                <form method="post" asp-page-handler="Dept">
+                                    <input type="hidden" name="id" value="@p.Enroll">
+                                    <select name="dept" data-autosubmit>
+                                        <option value="">—</option>
+                                        @foreach (var d in depts) { <option value="@d.Id" selected="@(deptOf.TryGetValue(p.Enroll, out var cur) && cur == d.Id)">@d.Name</option> }
+                                    </select>
+                                </form>
+                            </td>
+                            <td class="no-print">
+                                <form method="post" asp-page-handler="Active" class="inline">
+                                    <input type="hidden" name="id" value="@p.Enroll"><input type="hidden" name="active" value="@(p.Active ? "0" : "1")">
+                                    <button class="btn small @(p.Active ? "danger" : "")">@(p.Active ? T("Mark as former") : T("Restore"))</button>
+                                </form>
+                                <a class="btn small" href="/Reports?kind=timesheet&person=@p.Enroll">@T("Timesheet")</a>
+                            </td>
+                        }
+                        else
+                        {
+                            <td><a href="/Reports?kind=timesheet&person=@p.Enroll">@p.Name</a></td>
+                            <td>@ctx.DeptName(p.Enroll)</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@functions {
+    public bool ShowFormer { get; set; }
+
+    public void OnGet(string? former) => ShowFormer = former == "1";
+
+    public IActionResult OnPostAdd(uint id, string? name)
+    {
+        if (!CanEditData) return Denied();
+        name = (name ?? "").Trim();
+        if (id == 0 || name.Length == 0) { FlashError = Loc.T("Enter a numeric ID and a name."); return RedirectToPage(); }
+        Store.SetName(id, name);
+        Store.SetActive(id, true);
+        Log("Info", "People", $"Added ID {id}: {name}.");
+        Flash = T("Name saved.");
+        return RedirectToPage();
+    }
+
+    public IActionResult OnPostRename(uint id, string? name)
+    {
+        if (!CanEditData) return Denied();
+        name = (name ?? "").Trim();
+        if (name.Length == 0) { FlashError = T("This can't be empty."); return RedirectToPage(); }
+        Store.SetName(id, name);
+        Log("Info", "People", $"Renamed ID {id} to “{name}”.");
+        Flash = T("Name saved.");
+        return RedirectToPage();
+    }
+
+    public IActionResult OnPostDept(uint id, int? dept)
+    {
+        if (!CanEditData) return Denied();
+        Store.SetDepartment(new[] { id }, dept);
+        var name = dept is { } d ? Store.GetDepartments().FirstOrDefault(x => x.Id == d)?.Name ?? "?" : "no department";
+        Log("Info", "People", $"{Ctx.NameOf(id)} (ID {id}) moved to {name}.");
+        Flash = T("Department saved.");
+        return RedirectToPage();
+    }
+
+    public IActionResult OnPostActive(uint id, string? active)
+    {
+        if (!CanEditData) return Denied();
+        var on = active == "1";
+        Store.SetActive(id, on);
+        Log("Info", "People", on ? $"{Ctx.NameOf(id)} (ID {id}) is active again." : $"{Ctx.NameOf(id)} (ID {id}) marked as former.");
+        Flash = on ? Loc.F("{0} is active again.", Ctx.NameOf(id)) : Loc.F("{0} marked as former. Their old scans keep the name.", Ctx.NameOf(id));
+        return RedirectToPage(new { former = on ? null : "1" });
+    }
+}

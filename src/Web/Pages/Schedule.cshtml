@@ -1,0 +1,333 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Schedule");
+    ViewData["Nav"] = "/Schedule";
+    var ctx = Ctx;
+    var shifts = Store.GetShifts().OrderBy(s => s.Id).ToList();
+    string Tab(string t) => Tab_ == t ? "on" : "";
+    var months = Enumerable.Range(-12, 15).Select(i => new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(i)).ToList();
+}
+<h1>@T("Schedule")</h1>
+<div class="sub">@T("Who works which shift on which day. Reports use this to decide what counts as late, overtime or absent.")</div>
+<div class="tabs no-print">
+    <a class="@Tab("calendar")" href="?tab=calendar&month=@Month.ToString("yyyy-MM")">@T("Calendar")</a>
+    <a class="@Tab("shifts")" href="?tab=shifts">@T("Shifts")</a>
+    <a class="@Tab("leave")" href="?tab=leave">@T("Leave")</a>
+    <a class="@Tab("holidays")" href="?tab=holidays">@T("Holidays")</a>
+</div>
+
+@if (Tab_ == "calendar")
+{
+    var days = Enumerable.Range(1, DateTime.DaysInMonth(Month.Year, Month.Month)).Select(d => new DateTime(Month.Year, Month.Month, d)).ToList();
+    var people = ctx.ActivePeople.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    <form method="get" class="row no-print" style="margin-bottom:12px">
+        <input type="hidden" name="tab" value="calendar">
+        <label class="f">@T("Month")
+            <select name="month" data-autosubmit>
+                @foreach (var m in months) { <option value="@m.ToString("yyyy-MM")" selected="@(m == Month)">@Loc.Dates(m.ToString("MMMM yyyy", CultureInfo.InvariantCulture))</option> }
+            </select>
+        </label>
+        <label class="f">@T("Find person")<input type="search" data-filter="#cal" style="width:200px"></label>
+    </form>
+
+    <form method="post" asp-page-handler="Assign">
+        <input type="hidden" name="month" value="@Month.ToString("yyyy-MM")">
+        @if (CanEditData)
+        {
+            <div class="card no-print" style="margin-bottom:12px">
+                <h2>@T("Assign shifts")</h2>
+                <div class="muted" style="margin:-6px 0 10px">@T("Select people in the table below (Ctrl or Shift to select several), pick a shift and the dates, then press Apply.").Replace(" (Ctrl or Shift to select several)", "").Replace(" (bir neçəsi üçün Ctrl və ya Shift)", "")</div>
+                <div class="row">
+                    <label class="f">@T("Shift")
+                        <select name="shiftId">@foreach (var s in shifts) { <option value="@s.Id">@s.Name (@s.Start.ToString(@"hh\:mm")–@s.End.ToString(@"hh\:mm"))</option> }</select>
+                    </label>
+                    <label class="f">@T("From")<input type="date" name="from" value="@WebApp.Iso(Month)"></label>
+                    <label class="f">@T("To")<input type="date" name="to" value="@WebApp.Iso(Month.AddMonths(1).AddDays(-1))"></label>
+                    <label class="check" style="min-height:38px"><input type="checkbox" name="onlyShiftDays" value="1" checked> @T("Skip days the shift doesn't run")</label>
+                    <button class="btn primary" name="clear" value="0">@T("Apply")</button>
+                    <button class="btn" name="clear" value="1">@T("Remove shifts")</button>
+                </div>
+            </div>
+        }
+        <div class="card flush">
+            <div class="table-wrap">
+                <table class="cal" id="cal">
+                    <thead><tr>
+                        <th class="name">@if (CanEditData) { <input type="checkbox" data-select-all="#cal tbody input[name=ids]"> } @T("PERSON")</th>
+                        @foreach (var d in days) { <th class="@(d.DayOfWeek == DayOfWeek.Sunday ? "wk" : "")">@d.Day<br>@Loc.Day2(d)</th> }
+                    </tr></thead>
+                    <tbody>
+                        @foreach (var p in people)
+                        {
+                            <tr>
+                                <td class="name">@if (CanEditData) { <input type="checkbox" name="ids" value="@p.Enroll"> } @p.Name</td>
+                                @foreach (var d in days)
+                                {
+                                    var s = ctx.Shifts.For(d, p.Enroll);
+                                    string code, css = d.DayOfWeek == DayOfWeek.Sunday ? "wk" : "";
+                                    if (ctx.Holidays.ContainsKey(d)) { code = "H"; css += " hol"; }
+                                    else if (ctx.Leaves.OnLeave(d, p.Enroll) is not null) { code = "L"; css += " lv"; }
+                                    else if (s is null) code = "";
+                                    else if (s.RunsOn(d)) code = s.Code;
+                                    else { code = s.Code.ToLowerInvariant(); css += " off"; }
+                                    <td class="@css">@code</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </form>
+    <div class="footer-note">@Loc.F("{0}   H = holiday   L = personal leave   lowercase = assigned, but the shift doesn't run that weekday   blank = no shift", string.Join("   ", shifts.Select(s => $"{s.Code} = {s.Name}")))</div>
+}
+else if (Tab_ == "shifts")
+{
+    var editing = EditId is { } eid ? shifts.FirstOrDefault(s => s.Id == eid) : null;
+    <p class="sub">@T("A shift sets the working hours and how forgiving the reports are about arriving late or leaving early.")</p>
+    <div class="card flush" style="margin-bottom:16px">
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>@T("NAME")</th><th>@T("HOURS")</th><th>@T("DAYS")</th><th>@T("LATE ARRIVAL GRACE")</th><th>@T("EARLY LEAVE GRACE")</th><th>@T("OVERTIME AFTER")</th><th>@T("UNPAID BREAK")</th><th class="num">@T("DAYS ASSIGNED")</th>@if (CanEditData) { <th>@T("Actions")</th> }</tr></thead>
+                <tbody>
+                    @foreach (var s in shifts)
+                    {
+                        <tr>
+                            <td>@s.Name</td><td>@s.Start.ToString(@"hh\:mm")–@s.End.ToString(@"hh\:mm")</td><td>@s.DaysText</td>
+                            <td>@WebApp.Min(s.LateEnterMinutes)</td><td>@WebApp.Min(s.EarlyLeaveMinutes)</td><td>@WebApp.Min(s.LateLeaveMinutes)</td><td>@WebApp.Min(s.BreakMinutes)</td>
+                            <td class="num">@Store.CountAssignments(s.Id).ToString("N0")</td>
+                            @if (CanEditData)
+                            {
+                                <td><div class="actions">
+                                    <a class="btn small" href="?tab=shifts&edit=@s.Id">@T("Edit")</a>
+                                    <form method="post" asp-page-handler="DeleteShift" class="inline" data-confirm="@Loc.F("Delete the “{0}” shift?{1}{2}", s.Name, "", "")">
+                                        <input type="hidden" name="id" value="@s.Id"><button class="btn small danger">@T("Delete")</button>
+                                    </form>
+                                </div></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @if (CanEditData)
+    {
+        var x = editing;
+        <div class="card" style="max-width:720px">
+            <h2>@(x is null ? T("New shift") : T("Edit shift"))</h2>
+            <form method="post" asp-page-handler="SaveShift" class="grid" style="gap:12px">
+                <input type="hidden" name="id" value="@(x?.Id ?? 0)">
+                <div class="row">
+                    <label class="f">@T("Name")<input type="text" name="name" value="@x?.Name" required></label>
+                    <label class="f">@T("Starts (HH:mm)")<input type="time" name="start" value="@(x?.Start.ToString(@"hh\:mm") ?? "09:00")" required></label>
+                    <label class="f">@T("Ends (HH:mm)")<input type="time" name="end" value="@(x?.End.ToString(@"hh\:mm") ?? "18:00")" required></label>
+                </div>
+                <div class="muted">@T("Grace times (minutes)")</div>
+                <div class="row">
+                    <label class="f">@T("Early arrival allowed")<input type="number" min="0" name="earlyEnter" value="@(x?.EarlyEnterMinutes ?? 0)" style="width:110px"></label>
+                    <label class="f">@T("Late arrival grace")<input type="number" min="0" name="lateEnter" value="@(x?.LateEnterMinutes ?? 0)" style="width:110px"></label>
+                    <label class="f">@T("Early leave grace")<input type="number" min="0" name="earlyLeave" value="@(x?.EarlyLeaveMinutes ?? 0)" style="width:110px"></label>
+                    <label class="f">@T("Late leave grace (before overtime)")<input type="number" min="0" name="lateLeave" value="@(x?.LateLeaveMinutes ?? 0)" style="width:110px"></label>
+                    <label class="f">@T("Unpaid break")<input type="number" min="0" max="240" name="breakMin" value="@(x?.BreakMinutes ?? 0)" style="width:110px"></label>
+                </div>
+                <div class="muted">@T("Working days")</div>
+                <div class="row">
+                    @for (int i = 0; i < 7; i++)
+                    {
+                        <label class="check"><input type="checkbox" name="days" value="@i" checked="@(((x?.DaysOfWeekMask ?? 63) & (1 << i)) != 0)"> @Loc.T(ShiftDef.DayNames[i])</label>
+                    }
+                </div>
+                <div class="row"><span class="spacer"></span>@if (x is not null) { <a class="btn" href="?tab=shifts">@T("Cancel")</a> }<button class="btn primary">@T("Save shift")</button></div>
+            </form>
+        </div>
+    }
+}
+else if (Tab_ == "leave")
+{
+    var leaves = Store.GetLeaves(DateTime.Today.AddYears(-1), DateTime.Today.AddYears(1)).Where(l => ctx.Allows(l.Enroll)).ToList();
+    <p class="sub">@T("Record annual leave, sick days and business trips. People on leave are not reported absent, and the calendar marks those days with L.")</p>
+    @if (CanEditData)
+    {
+        <form method="post" asp-page-handler="AddLeave" class="card row" style="margin-bottom:14px">
+            <label class="f">@T("Person")
+                <select name="enroll" required><option value=""></option>
+                    @foreach (var p in ctx.ActivePeople.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)) { <option value="@p.Enroll">@p.Name · @p.Enroll</option> }
+                </select>
+            </label>
+            <label class="f">@T("Type")<select name="type">@foreach (var t in LeaveTypes.Local) { <option value="@t.Type">@Loc.T(t.Label)</option> }</select></label>
+            <label class="f">@T("From")<input type="date" name="from" value="@WebApp.Iso(DateTime.Today)" required></label>
+            <label class="f">@T("To (inclusive)")<input type="date" name="to" value="@WebApp.Iso(DateTime.Today)" required></label>
+            <label class="f">@T("Note (optional)")<input type="text" name="note" style="width:200px"></label>
+            <button class="btn primary">@T("Add leave")</button>
+        </form>
+    }
+    <div class="card flush">
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>@T("PERSON")</th><th>@T("FROM")</th><th>@T("TO")</th><th>@T("DAYS")</th><th>@T("TYPE / NOTE")</th><th>@T("ORIGIN")</th>@if (CanEditData) { <th></th> }</tr></thead>
+                <tbody>
+                    @foreach (var l in leaves)
+                    {
+                        <tr>
+                            <td>@ctx.NameOf(l.Enroll)</td><td>@WebApp.Iso(l.Start)</td><td>@WebApp.Iso(l.End)</td><td>@((l.End - l.Start).Days + 1)</td>
+                            <td>@l.Description</td><td>@(l.Source == "local" ? "Web / desktop" : "PDKS")</td>
+                            @if (CanEditData)
+                            {
+                                <td>@if (l.Source == "local")
+                                {
+                                    <form method="post" asp-page-handler="DeleteLeave" data-confirm="@Loc.F("Delete {0}'s leave from {1} to {2}?", ctx.NameOf(l.Enroll), WebApp.Iso(l.Start), WebApp.Iso(l.End))">
+                                        <input type="hidden" name="id" value="@l.Id"><button class="btn small danger">@T("Delete")</button>
+                                    </form>
+                                }</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (leaves.Count == 0) { <div class="empty">@T("No leave recorded for this period.")</div> }
+        </div>
+    </div>
+}
+else
+{
+    var holidays = Store.GetHolidays().OrderByDescending(h => h.Key).ToList();
+    <p class="sub">@T("Holidays apply to everyone: nobody is reported absent on these days. Personal leave copied from the original software is applied automatically.")</p>
+    @if (CanEditData)
+    {
+        <form method="post" asp-page-handler="AddHoliday" class="card row" style="margin-bottom:14px">
+            <label class="f">@T("Date")<input type="date" name="date" required></label>
+            <label class="f">@T("Holiday name")<input type="text" name="name" required style="width:240px"></label>
+            <button class="btn primary">@T("Add holiday")</button>
+        </form>
+    }
+    <div class="card flush" style="max-width:720px">
+        <table>
+            <thead><tr><th>@T("DATE")</th><th>@T("DAY")</th><th>@T("NAME")</th>@if (CanEditData) { <th></th> }</tr></thead>
+            <tbody>
+                @foreach (var h in holidays)
+                {
+                    <tr><td>@WebApp.Iso(h.Key)</td><td>@Loc.Dates(h.Key.ToString("dddd", CultureInfo.InvariantCulture))</td><td>@h.Value</td>
+                        @if (CanEditData)
+                        {
+                            <td><form method="post" asp-page-handler="DeleteHoliday"><input type="hidden" name="date" value="@WebApp.Iso(h.Key)"><button class="btn small danger">@T("Delete")</button></form></td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (holidays.Count == 0) { <div class="empty">@T("No holidays added yet.")</div> }
+    </div>
+}
+
+@functions {
+    public string Tab_ { get; set; } = "calendar";
+    public DateTime Month { get; set; }
+    public int? EditId { get; set; }
+
+    private static DateTime ParseMonth(string? m) =>
+        DateTime.TryParseExact((m ?? "") + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+            ? d : new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+    public void OnGet(string? tab, string? month, int? edit)
+    {
+        Tab_ = tab is "shifts" or "leave" or "holidays" ? tab : "calendar";
+        Month = ParseMonth(month);
+        EditId = edit;
+    }
+
+    public IActionResult OnPostAssign(string? month, uint[]? ids, int? shiftId, string? from, string? to, string? onlyShiftDays, string? clear)
+    {
+        if (!CanEditData) return Denied();
+        var back = RedirectToPage(new { tab = "calendar", month });
+        if (ids is null || ids.Length == 0) { FlashError = T("No people selected."); return back; }
+        bool remove = clear == "1";
+        var shift = Store.GetShifts().FirstOrDefault(s => s.Id == shiftId);
+        if (!remove && shift is null) { FlashError = T("Choose a shift first."); return back; }
+        var a = ParseDate(from) ?? ParseMonth(month);
+        var b = ParseDate(to) ?? a;
+        if (b < a) (a, b) = (b, a);
+        var written = Store.AssignShift(ids, a, b, remove ? null : shift!.Id, onlyShiftDays == "1");
+        var who = ids.Length == 1 ? "1 person" : $"{ids.Length} people";
+        Log("Info", "Schedule", remove
+            ? $"Removed shifts for {who} from {a:yyyy-MM-dd} to {b:yyyy-MM-dd} ({written} day(s))."
+            : $"Assigned “{shift!.Name}” to {who} from {a:yyyy-MM-dd} to {b:yyyy-MM-dd} ({written} day(s)).");
+        Flash = Loc.F("{0} day(s) updated.", written);
+        return back;
+    }
+
+    public IActionResult OnPostSaveShift(int id, string? name, string? start, string? end, int earlyEnter, int lateEnter, int earlyLeave, int lateLeave, int breakMin, int[]? days)
+    {
+        if (!CanEditData) return Denied();
+        var back = RedirectToPage(new { tab = "shifts", edit = id == 0 ? (int?)null : id });
+        name = (name ?? "").Trim();
+        if (name.Length == 0) { FlashError = T("Give the shift a name."); return back; }
+        if (ParseTime(start) is not { } s || ParseTime(end) is not { } e) { FlashError = T("Start and end should look like 09:00."); return back; }
+        if (e <= s) { FlashError = T("The shift must end after it starts (overnight shifts are not supported)."); return back; }
+        if (earlyEnter < 0 || lateEnter < 0 || earlyLeave < 0 || lateLeave < 0) { FlashError = T("Grace times must be whole numbers of minutes, 0 or more."); return back; }
+        if (breakMin is < 0 or > 240) { FlashError = T("The unpaid break must be between 0 and 240 minutes."); return back; }
+        var mask = (days ?? Array.Empty<int>()).Where(d => d is >= 0 and < 7).Aggregate(0, (m, d) => m | (1 << d));
+        if (mask == 0) { FlashError = T("Choose at least one working day."); return back; }
+
+        var savedId = Store.UpsertShift(new ShiftDef(id, name, s, e, earlyEnter, lateEnter, earlyLeave, lateLeave, mask, breakMin));
+        Log("Info", "Schedule", $"Shift “{name}” saved ({s:hh\\:mm}–{e:hh\\:mm}, grace {lateEnter}/{earlyLeave}/{lateLeave} min, break {breakMin} min).");
+        Flash = T("Shift saved. Reports now use the new rules.");
+        return RedirectToPage(new { tab = "shifts", edit = savedId });
+    }
+
+    public IActionResult OnPostDeleteShift(int id)
+    {
+        if (!CanEditData) return Denied();
+        var name = Store.GetShifts().FirstOrDefault(s => s.Id == id)?.Name;
+        Store.DeleteShift(id);
+        Log("Warn", "Schedule", $"Shift “{name}” deleted.");
+        Flash = T("Shift deleted.");
+        return RedirectToPage(new { tab = "shifts" });
+    }
+
+    public IActionResult OnPostAddLeave(uint? enroll, int type, string? from, string? to, string? note)
+    {
+        if (!CanEditData) return Denied();
+        var back = RedirectToPage(new { tab = "leave" });
+        if (enroll is null) { FlashError = T("Choose a person first."); return back; }
+        if (ParseDate(from) is not { } a || ParseDate(to) is not { } b) { FlashError = T("Pick the first and last day."); return back; }
+        if (b < a) { FlashError = T("The last day can't be before the first day."); return back; }
+        var label = Loc.T(LeaveTypes.Local.FirstOrDefault(t => t.Type == type).Label ?? "Other");
+        var description = string.IsNullOrWhiteSpace(note) ? label : $"{label} – {note.Trim()}";
+        Store.AddLeave(enroll.Value, a, b, description, type);
+        Log("Info", "Leave", $"Leave added for {Ctx.NameOf(enroll.Value)} (ID {enroll}): {a:yyyy-MM-dd} to {b:yyyy-MM-dd} ({description}).");
+        Flash = Loc.F("{0} recorded for {1} day(s).", label, (b - a).Days + 1);
+        return back;
+    }
+
+    public IActionResult OnPostDeleteLeave(long id)
+    {
+        if (!CanEditData) return Denied();
+        if (!Store.DeleteLeave(id)) FlashError = T("Leave copied from the original software can't be deleted here.");
+        else { Log("Warn", "Leave", $"Leave entry #{id} deleted."); Flash = T("Leave removed."); }
+        return RedirectToPage(new { tab = "leave" });
+    }
+
+    public IActionResult OnPostAddHoliday(string? date, string? name)
+    {
+        if (!CanEditData) return Denied();
+        if (ParseDate(date) is not { } d || string.IsNullOrWhiteSpace(name)) { FlashError = T("Pick a date and give the holiday a name."); return RedirectToPage(new { tab = "holidays" }); }
+        Store.SetHoliday(d, name.Trim());
+        Log("Info", "Schedule", $"Holiday {d:yyyy-MM-dd} “{name.Trim()}” added.");
+        Flash = T("Holiday saved.");
+        return RedirectToPage(new { tab = "holidays" });
+    }
+
+    public IActionResult OnPostDeleteHoliday(string? date)
+    {
+        if (!CanEditData) return Denied();
+        if (ParseDate(date) is { } d)
+        {
+            Store.DeleteHoliday(d);
+            Log("Warn", "Schedule", $"Holiday {d:yyyy-MM-dd} removed.");
+            Flash = T("Holiday removed.");
+        }
+        return RedirectToPage(new { tab = "holidays" });
+    }
+}

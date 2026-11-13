@@ -1,0 +1,100 @@
+@inject AttendanceStore Store
+@inject AppSettings Settings
+@{
+    var nav = ViewData["Nav"] as string ?? "";
+    var title = ViewData["Title"] as string ?? "";
+    var bare = ViewData["Bare"] is true;
+    var signedIn = User.Identity?.IsAuthenticated == true;
+    var status = signedIn ? Store.GetDeviceStatus() : null;
+    var staleAfter = TimeSpan.FromSeconds(Math.Max(300, Settings.SyncIntervalSeconds * 3));
+    var stale = status is null || DateTime.Now - status.CheckedAt > staleAfter;
+    var departments = signedIn ? Store.GetDepartments() : new List<DepartmentInfo>();
+    int? dept = int.TryParse(Context.Request.Cookies["dept"], out var dd) ? dd : null;
+    var flash = TempData["flash"] as string;
+    var flashError = TempData["flashError"] as string;
+
+    (string Page, string Label, string Icon)[] items =
+    {
+        ("/Index", "Dashboard", "M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"),
+        ("/Attendance", "Attendance", "M4 5h16v15H4zM4 9h16M8 3v4M16 3v4"),
+        ("/Schedule", "Schedule", "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2"),
+        ("/Reports", "Reports", "M4 20V10M10 20V4M16 20v-7M22 20H2"),
+        ("/People", "People", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a7 7 0 0 1 14 0v1M17 11a3 3 0 1 0 0-6M22 21v-1a5 5 0 0 0-4-4.9"),
+        ("/Log", "Activity log", "M4 6h16M4 12h16M4 18h10"),
+        ("/Settings", "Settings", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.8-1.1V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.3z"),
+    };
+}
+<!doctype html>
+<html lang="@Loc.Language">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@(title.Length > 0 ? title + " · " : "")@WebApp.T("Attendance")</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/site.css" asp-append-version="true">
+</head>
+<body class="@(bare ? "bare" : "")">
+@if (bare)
+{
+    <main class="bare-main">@RenderBody()</main>
+}
+else
+{
+    <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-hidden="true">
+    <header class="topbar">
+        <label for="menu-toggle" class="menu-btn" aria-label="@WebApp.T("Menu")">☰</label>
+        <span class="topbar-title">@WebApp.T("Attendance")</span>
+    </header>
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon"><svg viewBox="0 0 24 24"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a7 7 0 0 1 14 0v1M17 11a3 3 0 1 0 0-6M22 21v-1a5 5 0 0 0-4-4.9"/></svg></div>
+            <div><div class="brand-name">@WebApp.T("Attendance")</div><div class="brand-sub">Web</div></div>
+        </div>
+        <nav>
+            @foreach (var it in items)
+            {
+                <a href="@(it.Page == "/Index" ? "/" : it.Page)" class="nav-item @(nav == it.Page ? "active" : "")">
+                    <svg viewBox="0 0 24 24"><path d="@it.Icon"/></svg><span>@WebApp.T(it.Label)</span>
+                </a>
+            }
+        </nav>
+        <div class="sidebar-foot">
+            <form method="get" action="/Dept" class="dept-form">
+                <label class="side-label" for="dept-select">@WebApp.T("SHOWING")</label>
+                <input type="hidden" name="back" value="@(Context.Request.Path + Context.Request.QueryString)">
+                <select id="dept-select" name="d" data-autosubmit>
+                    <option value="">@WebApp.T("All departments")</option>
+                    @foreach (var d in departments.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase))
+                    {
+                        <option value="@d.Id" selected="@(dept == d.Id)">@d.Name</option>
+                    }
+                </select>
+            </form>
+            <div class="status-box" title="@WebApp.T("Device status comes from the desktop app.")">
+                <div class="status-line">
+                    <span class="dot @(stale ? "warn" : status!.Online ? "good" : "bad")"></span>
+                    <span>@(stale ? WebApp.T("Desktop app not seen") : status!.Online ? WebApp.T("Connected") : WebApp.T("Offline"))</span>
+                </div>
+                <div class="status-sub">@(status is null ? WebApp.T("Not synced yet") : WebApp.F("Last sync {0}", status.CheckedAt.ToString("HH:mm", CultureInfo.InvariantCulture)))</div>
+            </div>
+            <div class="user-box">
+                <div>
+                    <div class="user-name">@(User.FindFirst(WebApp.DisplayNameClaim)?.Value ?? User.Identity?.Name)</div>
+                    <div class="status-sub">@WebApp.T(User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "")</div>
+                </div>
+                <form method="post" action="/Logout">
+                    @Html.AntiForgeryToken()
+                    <button class="link-btn" type="submit">@WebApp.T("Sign out")</button>
+                </form>
+            </div>
+        </div>
+    </aside>
+    <main class="content">
+        @if (flash is not null) { <div class="flash">@flash</div> }
+        @if (flashError is not null) { <div class="flash error">@flashError</div> }
+        @RenderBody()
+    </main>
+}
+<script src="/site.js" asp-append-version="true"></script>
+</body>
+</html>

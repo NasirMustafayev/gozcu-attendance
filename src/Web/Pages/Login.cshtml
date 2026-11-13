@@ -1,0 +1,61 @@
+@page
+@inherits WebPage
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@{
+    ViewData["Title"] = T("Sign in");
+    ViewData["Bare"] = true;
+}
+<div class="card login">
+    <div class="brand">
+        <div class="brand-icon"><svg viewBox="0 0 24 24" style="color:#fff"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a7 7 0 0 1 14 0v1"/></svg></div>
+        <div><div class="brand-name">@T("Attendance")</div><div class="muted">@T("Sign in")</div></div>
+    </div>
+    <form method="post">
+        <label class="f">@T("Username")<input type="text" name="username" value="@Username" autocomplete="username" autofocus required></label>
+        <label class="f">@T("Password")<input type="password" name="password" autocomplete="current-password" required></label>
+        <input type="hidden" name="returnUrl" value="@ReturnUrl">
+        @if (Error is not null) { <div class="error-text">@Error</div> }
+        <button class="btn primary" type="submit">@T("Sign in")</button>
+        <div class="row">
+            <a href="?lang=en&returnUrl=@Uri.EscapeDataString(ReturnUrl ?? "")" class="muted">English</a>
+            <a href="?lang=az&returnUrl=@Uri.EscapeDataString(ReturnUrl ?? "")" class="muted">Azərbaycanca</a>
+        </div>
+    </form>
+</div>
+
+@functions {
+    public string? Username { get; set; }
+    public string? ReturnUrl { get; set; }
+    public string? Error { get; set; }
+
+    public IActionResult OnGet(string? returnUrl, string? lang)
+    {
+        ReturnUrl = returnUrl;
+        if (lang is "en" or "az")
+        {
+            Response.Cookies.Append("lang", lang, new CookieOptions { MaxAge = TimeSpan.FromDays(365), HttpOnly = true, SameSite = SameSiteMode.Lax });
+            return Redirect("/Login" + (string.IsNullOrEmpty(returnUrl) ? "" : "?returnUrl=" + Uri.EscapeDataString(returnUrl)));
+        }
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostAsync(string username, string password, string? returnUrl)
+    {
+        Username = username;
+        ReturnUrl = returnUrl;
+        var user = Store.CheckWebLogin(username ?? "", password ?? "");
+        if (user is null)
+        {
+            // Slow down password guessing.
+            await Task.Delay(800);
+            Store.Log("Warn", "Web", $"Failed web sign-in for “{username}” from {HttpContext.Connection.RemoteIpAddress}.");
+            Error = T("Wrong username or password.");
+            return Page();
+        }
+
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, WebApp.Principal(user));
+        Store.Log("Info", "Web", $"{user.Username} signed in to the web app from {HttpContext.Connection.RemoteIpAddress}.");
+        return LocalRedirect(Url.IsLocalUrl(returnUrl) ? returnUrl! : "/");
+    }
+}

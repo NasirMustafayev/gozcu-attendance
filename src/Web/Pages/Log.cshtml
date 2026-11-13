@@ -1,0 +1,57 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Activity log");
+    ViewData["Nav"] = "/Log";
+}
+<h1>@T("Activity log")</h1>
+<div class="sub">@(Rows.Count >= 3000 ? T("Only the last 3,000 entries are shown.") : Loc.F(Rows.Count == 1 ? "{0} entry." : "{0} entries.", Rows.Count))</div>
+
+<form method="get" class="row no-print" style="margin-bottom:14px">
+    <label class="f">@T("From")<input type="date" name="from" value="@WebApp.Iso(From)"></label>
+    <label class="f">@T("To")<input type="date" name="to" value="@WebApp.Iso(To)"></label>
+    <label class="f">@T("Level")
+        <select name="level" data-autosubmit>
+            <option value="">@T("All")</option>
+            @foreach (var l in new[] { "Info", "Warn", "Error" }) { <option value="@l" selected="@(Level == l)">@T(l)</option> }
+        </select>
+    </label>
+    <label class="f">@T("Search")<input type="search" name="q" value="@Q" style="width:220px"></label>
+    <button class="btn" type="submit">@T("Show")</button>
+</form>
+
+<div class="card flush">
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>@T("TIME")</th><th>@T("LEVEL")</th><th>@T("AREA")</th><th>@T("MESSAGE")</th></tr></thead>
+            <tbody>
+                @foreach (var e in Rows)
+                {
+                    <tr>
+                        <td style="white-space:nowrap">@e.Time.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)</td>
+                        <td class="@(e.Level == "Warn" ? "c-warn" : e.Level == "Error" ? "c-bad" : "muted")" style="font-weight:600">@T(e.Level)</td>
+                        <td>@e.Area</td><td>@e.Message</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (Rows.Count == 0) { <div class="empty">@T("Nothing logged for these filters.")</div> }
+    </div>
+</div>
+
+@functions {
+    public DateTime From { get; set; }
+    public DateTime To { get; set; }
+    public string? Level { get; set; }
+    public string Q { get; set; } = "";
+    public List<LogEntry> Rows { get; set; } = new();
+
+    public void OnGet(string? from, string? to, string? level, string? q)
+    {
+        To = ParseDate(to) ?? DateTime.Today;
+        From = ParseDate(from) ?? To.AddDays(-7);
+        Level = level is "Info" or "Warn" or "Error" ? level : null;
+        Q = (q ?? "").Trim();
+        Rows = Store.GetLog(From, To.AddDays(1), Level, Q, 3000);
+    }
+}

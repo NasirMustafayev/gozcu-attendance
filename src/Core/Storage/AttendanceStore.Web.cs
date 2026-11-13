@@ -1,0 +1,195 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using Microsoft.Data.Sqlite;
+
+namespace GozcuStandalone.Storage;
+
+// What the desktop app last saw on the device, so the web app (which never talks to the device) can show it.
+public sealed record DeviceStatus(bool Online, DateTime CheckedAt, string Serial, int Pending, string Error);
+
+public sealed record WebUser(string Username, string DisplayName, string Role, string Language, DateTime Created);
+
+// Shared state and sign-in accounts for the web app.
+public sealed partial class AttendanceStore
+{
+    public const string RoleAdmin = "admin";
+    public const string RoleEditor = "editor";
+    public const string RoleViewer = "viewer";
+
+    private static void EnsureWebTables(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS web_users (
+                username TEXT PRIMARY KEY COLLATE NOCASE,
+                display_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL,
+                language TEXT NOT NULL DEFAULT 'en',
+                created_at TEXT NOT NULL
+            );
+            """;
+        cmd.ExecuteNonQuery();
+    }
+
+    public string? GetState(string key)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT value FROM app_state WHERE key = $k;";
+        cmd.Parameters.AddWithValue("$k", key);
+        return cmd.ExecuteScalar() as string;
+    }
+
+    public void SetState(string key, string value)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "INSERT INTO app_state (key, value) VALUES ($k, $v) ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+        cmd.Parameters.AddWithValue("$k", key);
+        cmd.Parameters.AddWithValue("$v", value);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void SaveDeviceStatus(DeviceStatus s) =>
+        SetState("device_status", string.Join('\t', s.Online ? "1" : "0", s.CheckedAt.ToString(Fmt, CultureInfo.InvariantCulture),
+            s.Serial, s.Pending.ToString(CultureInfo.InvariantCulture), s.Error.Replace('\t', ' ')));
+
+    public DeviceStatus? GetDeviceStatus()
+    {
+        var v = GetState("device_status")?.Split('\t');
+        if (v is null || v.Length < 5) return null;
+        return new DeviceStatus(v[0] == "1", DateTime.ParseExact(v[1], Fmt, CultureInfo.InvariantCulture), v[2],
+            int.TryParse(v[3], out var p) ? p : 0, v[4]);
+    }
+
+    // ---------- sync requests from the web app ----------
+
+    // The web app asks; the desktop app (which owns the device connection) does the sync and answers.
+    public long RequestSync(string by)
+    {
+        var id = DateTime.UtcNow.Ticks;
+        SetState("sync_request", $"{id}\t{by}");
+        return id;
+    }
+
+    public (long Id, string By)? GetSyncRequest()
+    {
+        var v = GetState("sync_request")?.Split('\t');
+        return v is { Length: 2 } && long.TryParse(v[0], out var id) ? (id, v[1]) : null;
+    }
+
+    public void SaveSyncResult(long id, bool ok, int added, string message) =>
+        SetState("sync_result", $"{id}\t{(ok ? 1 : 0)}\t{added}\t{message.Replace('\t', ' ')}");
+
+    public (long Id, bool Ok, int Added, string Message)? GetSyncResult()
+    {
+        var v = GetState("sync_result")?.Split('\t');
+        return v is { Length: 4 } && long.TryParse(v[0], out var id) ? (id, v[1] == "1", int.TryParse(v[2], out var n) ? n : 0, v[3]) : null;
+    }
+
+    // ---------- web accounts ----------
+
+    public int CountWebUsers()
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM web_users;";
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    public List<WebUser> GetWebUsers()
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT username, display_name, role, language, created_at FROM web_users ORDER BY username;";
+        var list = new List<WebUser>();
+        using var rd = cmd.ExecuteReader();
+        while (rd.Read()) list.Add(ReadUser(rd));
+        return list;
+    }
+
+    public WebUser? GetWebUser(string username)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT username, display_name, role, language, created_at FROM web_users WHERE username = $u;";
+        cmd.Parameters.AddWithValue("$u", username.Trim());
+        using var rd = cmd.ExecuteReader();
+        return rd.Read() ? ReadUser(rd) : null;
+    }
+
+    public WebUser? CheckWebLogin(string username, string password)
+    {
+        string? stored;
+        using (var conn = Open())
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT password_hash FROM web_users WHERE username = $u;";
+            cmd.Parameters.AddWithValue("$u", username.Trim());
+            stored = cmd.ExecuteScalar() as string;
+        }
+        return stored is not null && VerifyPassword(password, stored) ? GetWebUser(username) : null;
+    }
+
+    // Creates the account, or updates it; a null password keeps the current one.
+    public void SaveWebUser(string username, string displayName, string role, string language, string? password)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.Parameters.AddWithValue("$u", username.Trim());
+        cmd.Parameters.AddWithValue("$d", displayName.Trim());
+        cmd.Parameters.AddWithValue("$r", role);
+        cmd.Parameters.AddWithValue("$l", language);
+        cmd.Parameters.AddWithValue("$c", DateTime.Now.ToString(Fmt, CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$p", password is null ? "" : HashPassword(password));
+        cmd.CommandText = password is null
+            ? "UPDATE web_users SET display_name = $d, role = $r, language = $l WHERE username = $u;"
+            : """
+              INSERT INTO web_users (username, display_name, password_hash, role, language, created_at) VALUES ($u, $d, $p, $r, $l, $c)
+              ON CONFLICT(username) DO UPDATE SET display_name = $d, password_hash = $p, role = $r, language = $l;
+              """;
+        cmd.ExecuteNonQuery();
+    }
+
+    public void SetWebUserLanguage(string username, string language)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE web_users SET language = $l WHERE username = $u;";
+        cmd.Parameters.AddWithValue("$u", username);
+        cmd.Parameters.AddWithValue("$l", language);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void DeleteWebUser(string username)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM web_users WHERE username = $u;";
+        cmd.Parameters.AddWithValue("$u", username);
+        cmd.ExecuteNonQuery();
+    }
+
+    private static WebUser ReadUser(SqliteDataReader rd) =>
+        new(rd.GetString(0), rd.GetString(1), rd.GetString(2), rd.GetString(3), DateTime.ParseExact(rd.GetString(4), Fmt, CultureInfo.InvariantCulture));
+
+    // PBKDF2-SHA256 with a random salt.
+    private static string HashPassword(string password)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, 210_000, HashAlgorithmName.SHA256, 32);
+        return $"pbkdf2${210_000}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+    }
+
+    private static bool VerifyPassword(string password, string stored)
+    {
+        var parts = stored.Split('$');
+        if (parts.Length != 4 || parts[0] != "pbkdf2" || !int.TryParse(parts[1], out var rounds)) return false;
+        var salt = Convert.FromBase64String(parts[2]);
+        var expected = Convert.FromBase64String(parts[3]);
+        var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, rounds, HashAlgorithmName.SHA256, expected.Length);
+        return CryptographicOperations.FixedTimeEquals(actual, expected);
+    }
+}

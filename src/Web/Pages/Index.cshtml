@@ -1,0 +1,139 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Dashboard");
+    ViewData["Nav"] = "/Index";
+    var today = DateTime.Today;
+    var ctx = Ctx;
+    var scans = ctx.Scans(today, today.AddDays(1));
+    var rows = ctx.Daily(scans);
+    var notIn = Reports.NotInToday(ctx);
+    var status = Store.GetDeviceStatus();
+    var latest = Store.GetLatest(60).Where(r => ctx.Allows(r.EnrollNumber)).Take(12).ToList();
+
+    static string Pill(GozcuStandalone.Device.AttendanceRecord r) => r.IsManual ? "manual" : r.VerifyCode switch { 5 => "face", 1 => "finger", _ => "" };
+}
+<div data-autorefresh>
+    <h1>@T("Dashboard")</h1>
+    <div class="sub">@Loc.Dates(today.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture)) · @T("Refreshes every minute")</div>
+
+    <div class="grid cards">
+        <a class="card stat" href="/Today?kind=present">
+            <div class="label">@T("PRESENT")</div><div class="value">@rows.Count</div><div class="hint">@T("scanned in")</div>
+        </a>
+        <a class="card stat" href="/Today?kind=notin">
+            <div class="label">@T("NOT IN YET")</div><div class="value c-bad">@notIn.Count</div><div class="hint">@T("expected, no scan")</div>
+        </a>
+        <a class="card stat" href="/Today?kind=late">
+            <div class="label">@T("LATE")</div><div class="value c-warn">@rows.Count(r => r.LateMinutes > 0)</div><div class="hint">@T("past the grace time")</div>
+        </a>
+        <a class="card stat" href="/Today?kind=early">
+            <div class="label">@T("LEFT EARLY")</div><div class="value c-violet">@rows.Count(r => r.EarlyLeaveMinutes > 0)</div><div class="hint">@T("scanned out early")</div>
+        </a>
+        <a class="card stat" href="/Today?kind=scans">
+            <div class="label">@T("SCANS")</div><div class="value">@scans.Count</div><div class="hint">@T("today")</div>
+        </a>
+        <div class="card stat">
+            <div class="label">@T("ON DEVICE")</div><div class="value c-accent">@(status?.Pending ?? 0)</div><div class="hint">@T("from the desktop app")</div>
+        </div>
+    </div>
+
+    <div class="grid two">
+        <div class="grid">
+            <div class="card">
+                <div class="row"><h2>@T("Device")</h2><span class="spacer"></span><span class="muted">@Settings.DeviceIp:@Settings.DevicePort</span></div>
+                <div class="kv">
+                    <div><div class="k">@T("Serial number")</div><div>@(status is { Serial.Length: > 0 } ? status.Serial : "—")</div></div>
+                    <div><div class="k">@T("Last check")</div><div>@(status?.CheckedAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "—")</div></div>
+                </div>
+                @if (status is { Online: false, Error.Length: > 0 })
+                {
+                    <div class="error-text">@Loc.F("Could not reach the device: {0}", status.Error)</div>
+                }
+                <form method="post" asp-page-handler="Sync" data-busy="@T("Syncing…")" style="margin-top:14px">
+                    <button class="btn primary" type="submit">@T("Sync now")</button>
+                </form>
+                <div class="footer-note">@T("Device status comes from the desktop app.")</div>
+            </div>
+            <div class="card">
+                <h2>@T("Expected today, not in yet")</h2>
+                <div class="scroll">
+                    @foreach (var n in notIn)
+                    {
+                        <div class="list-row"><a href="/Reports?kind=timesheet&person=@n.Enroll">@(n.Name.Length > 0 ? n.Name : $"ID {n.Enroll}")</a><span class="muted">@n.Shift</span></div>
+                    }
+                    @if (notIn.Count == 0)
+                    {
+                        <div class="muted">@(ctx.Shifts.ShiftCount == 0 ? T("No schedule yet. Import from the original software (Settings) or assign shifts in Schedule.") : T("Everyone expected today has scanned in."))</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>@T("Latest scans")</h2>
+            <div class="scroll" style="max-height:560px">
+                @foreach (var r in latest)
+                {
+                    var name = ctx.Names.TryGetValue(r.EnrollNumber, out var nm) ? nm : T("Unnamed");
+                    <div class="feed-item">
+                        <div class="avatar">@(name.Length > 0 ? name[..1].ToUpperInvariant() : "?")</div>
+                        <div><div style="font-weight:600">@name</div><div class="muted" style="font-size:12px">ID @r.EnrollNumber</div></div>
+                        <span class="pill @Pill(r)">@r.VerifyName</span>
+                        <div class="feed-time">@(r.Timestamp.Date == today ? r.Timestamp.ToString("HH:mm") : Loc.Dates(r.Timestamp.ToString("d MMM HH:mm", CultureInfo.InvariantCulture)))</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@functions {
+    private static readonly SemaphoreSlim DirectSync = new(1, 1);
+
+    public void OnGet() { }
+
+    // The desktop app owns the device connection, so the web app asks it to sync and waits for the answer.
+    // Only when the desktop app is not running does the web app talk to the device itself.
+    public async Task<IActionResult> OnPostSyncAsync()
+    {
+        var status = Store.GetDeviceStatus();
+        var staleAfter = TimeSpan.FromSeconds(Math.Max(300, Settings.SyncIntervalSeconds * 3));
+        if (status is not null && DateTime.Now - status.CheckedAt < staleAfter)
+        {
+            var id = Store.RequestSync(Who);
+            var until = DateTime.UtcNow.AddSeconds(60);
+            while (DateTime.UtcNow < until)
+            {
+                await Task.Delay(500);
+                if (Store.GetSyncResult() is { } r && r.Id == id)
+                {
+                    if (r.Ok) Flash = F("Synced. {0} new scan(s).", r.Added);
+                    else FlashError = F("Sync failed: {0}", r.Message);
+                    return RedirectToPage();
+                }
+            }
+            FlashError = T("The desktop app did not answer in time. Check that it is running.");
+            return RedirectToPage();
+        }
+
+        if (!await DirectSync.WaitAsync(0)) { FlashError = T("Another sync is already running."); return RedirectToPage(); }
+        try
+        {
+            var before = Store.Count();
+            await Task.Run(() => new DeviceSync(Settings, Store).PullOnce(Settings.AcknowledgeScans, force: true));
+            if (Settings.AutoImportFromPdks)
+                await Task.Run(() => PdksImporter.Import(Settings, Store, recentDays: 3, includeSchedule: false));
+            var added = Store.Count() - before;
+            Log("Info", "Sync", $"Synced directly from the web (desktop app not running): {added} new scan(s).");
+            Flash = F("Synced. {0} new scan(s).", added) + " " + T("The desktop app is not running, so the web app synced with the device directly.");
+        }
+        catch (Exception ex)
+        {
+            Log("Warn", "Sync", "Direct sync from the web failed: " + ex.GetBaseException().Message);
+            FlashError = F("Sync failed: {0}", ex.GetBaseException().Message);
+        }
+        finally { DirectSync.Release(); }
+        return RedirectToPage();
+    }
+}

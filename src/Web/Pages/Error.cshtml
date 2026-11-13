@@ -1,0 +1,8 @@
+@page
+@inherits WebPage
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+@{ ViewData["Title"] = T("Something went wrong on the server."); ViewData["Bare"] = true; }
+<div class="card login">
+    <h2>@T("Something went wrong on the server.")</h2>
+    <a class="btn" href="/">@T("Back to the dashboard")</a>
+</div>

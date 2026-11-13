@@ -1,0 +1,469 @@
+<Window x:Class="GozcuStandalone.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:GozcuStandalone.App"
+        Title="Attendance" Width="1300" Height="820" MinWidth="1180" MinHeight="700" Icon="app.ico"
+        Background="{StaticResource Page}" FontFamily="Segoe UI" WindowStartupLocation="CenterScreen"
+        PreviewKeyDown="Window_PreviewKeyDown" Closing="Window_Closing">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="248"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar -->
+        <Border Background="{StaticResource Sidebar}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Margin="26,30,20,22">
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="36" Height="36" CornerRadius="10" Background="{StaticResource Accent}">
+                            <TextBlock Text="&#xE716;" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="White"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="Attendance" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                            <TextBlock Text="Standalone" FontSize="11" Foreground="#94A3B8"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Margin="0,2,0,0">
+                    <RadioButton x:Name="NavDashboard" Style="{StaticResource NavButton}" Tag="&#xE80F;" Content="Dashboard" IsChecked="True" Checked="Nav_Checked"/>
+                    <RadioButton x:Name="NavAttendance" Style="{StaticResource NavButton}" Tag="&#xE787;" Content="Attendance" Checked="Nav_Checked"/>
+                    <RadioButton x:Name="NavSchedule" Style="{StaticResource NavButton}" Tag="&#xE823;" Content="Schedule" Checked="Nav_Checked"/>
+                    <RadioButton x:Name="NavReports" Style="{StaticResource NavButton}" Tag="&#xE9D2;" Content="Reports" Checked="Nav_Checked"/>
+                    <RadioButton x:Name="NavPeople" Style="{StaticResource NavButton}" Tag="&#xE716;" Content="People" Checked="Nav_Checked"/>
+                    <RadioButton x:Name="NavLog" Style="{StaticResource NavButton}" Tag="&#xE8FD;" Content="Activity log" Checked="Nav_Checked"/>
+                    <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Tag="&#xE713;" Content="Settings" Checked="Nav_Checked"/>
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Margin="16">
+                    <TextBlock Text="SHOWING" Foreground="#94A3B8" FontSize="10" FontWeight="SemiBold" Margin="4,0,0,6"/>
+                    <ComboBox x:Name="DeptBox" DisplayMemberPath="Name" Padding="10,7" Margin="0,0,0,14" SelectionChanged="DeptBox_Changed"
+                              ToolTip="Show one department's people on every page"/>
+                    <Border Padding="14" CornerRadius="12" Background="{StaticResource SidebarHover}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="{StaticResource Warn}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="StatusText" Text="Connecting…" Margin="9,0,0,0" Foreground="White" FontWeight="SemiBold" FontSize="13"/>
+                            </StackPanel>
+                            <TextBlock x:Name="SidebarSync" Text="Not synced yet" Margin="19,4,0,0" Foreground="#94A3B8" FontSize="11"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Content -->
+        <Grid Grid.Column="1">
+            <!-- Dashboard -->
+            <Grid x:Name="PageDashboard" Margin="34,30,34,30">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Margin="0,0,0,22">
+                    <TextBlock Text="Dashboard" Style="{StaticResource PageTitle}"/>
+                    <TextBlock x:Name="TodayText" Style="{StaticResource Label}" FontSize="13" Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <Grid Grid.Row="1" Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource Card}" Padding="16,16">
+                        <StackPanel>
+                            <TextBlock Text="PRESENT" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="PresentValue" Text="0" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,6,0,0"/>
+                            <TextBlock Text="scanned in" Style="{StaticResource Label}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource Card}" Padding="16,16">
+                        <StackPanel>
+                            <TextBlock Text="NOT IN YET" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="NotInValue" Text="0" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Bad}" Margin="0,6,0,0"/>
+                            <TextBlock Text="expected, no scan" Style="{StaticResource Label}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="4" Style="{StaticResource Card}" Padding="16,16">
+                        <StackPanel>
+                            <TextBlock Text="LATE" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="LateValue" Text="0" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Warn}" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="LateHint" Text="past grace time" Style="{StaticResource Label}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="6" Style="{StaticResource Card}" Padding="16,16">
+                        <StackPanel>
+                            <TextBlock Text="LEFT EARLY" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="EarlyValue" Text="0" FontSize="30" FontWeight="Bold" Foreground="#7C3AED" Margin="0,6,0,0"/>
+                            <TextBlock Text="scanned out early" Style="{StaticResource Label}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="8" Style="{StaticResource Card}" Padding="16,16">
+                        <StackPanel>
+                            <TextBlock Text="SCANS" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="ScansValue" Text="0" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,6,0,0"/>
+                            <TextBlock Text="today" Style="{StaticResource Label}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="10" Style="{StaticResource Card}" Padding="16,16">
+                        <StackPanel>
+                            <TextBlock Text="ON DEVICE" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="PendingValue" Text="0" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Accent}" Margin="0,6,0,0"/>
+                            <TextBlock Text="to collect" Style="{StaticResource Label}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="0.85*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1.15*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="16"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="Device" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                                    <TextBlock x:Name="DeviceAddress" Style="{StaticResource Label}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Serial number" Style="{StaticResource Label}"/>
+                                        <TextBlock x:Name="DeviceSerial" Text="—" FontSize="14" Foreground="{StaticResource Ink}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Last sync" Style="{StaticResource Label}"/>
+                                        <TextBlock x:Name="DeviceLastSync" Text="—" FontSize="14" Foreground="{StaticResource Ink}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock x:Name="DeviceError" Foreground="{StaticResource Bad}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <Button x:Name="SyncButton" Content="Sync now" Style="{StaticResource PrimaryButton}" Click="SyncButton_Click" ToolTip="F5"/>
+                                    <ToggleButton x:Name="AutoToggle" Content="Auto-sync on" Style="{StaticResource ToggleGhost}" Margin="10,0,0,0"
+                                                  IsChecked="True" Checked="AutoToggle_Changed" Unchecked="AutoToggle_Changed"
+                                                  ToolTip="Reading never removes scans from the device, so the original software keeps working alongside this app."/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="2" Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                <TextBlock Text="Expected today, not in yet" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,0,0,8"/>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel>
+                                        <ItemsControl x:Name="NotInList" Margin="0,0,12,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,0,0,6">
+                                                        <TextBlock Text="{Binding Name}" Foreground="{StaticResource Ink}" FontSize="13"/>
+                                                        <TextBlock Text="{Binding Shift}" Style="{StaticResource Label}" HorizontalAlignment="Right"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock x:Name="NotInEmpty" Style="{StaticResource Label}" FontSize="13" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <Border Grid.Column="2" Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                            <TextBlock Text="Latest scans" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,0,0,12"/>
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="FeedList" Margin="0,0,12,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,2" Height="46">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="46"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="86"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid Width="34" Height="34" HorizontalAlignment="Left">
+                                                    <Ellipse Fill="{StaticResource AccentSoft}"/>
+                                                    <TextBlock Text="{Binding Initial}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Foreground="#1D4ED8"/>
+                                                </Grid>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource Ink}"/>
+                                                    <TextBlock Text="{Binding Id}" Style="{StaticResource Label}"/>
+                                                </StackPanel>
+                                                <Border Grid.Column="2" CornerRadius="10" Padding="10,3" Background="{Binding MethodBack}" VerticalAlignment="Center" Margin="0,0,14,0">
+                                                    <TextBlock Text="{Binding Method}" FontSize="11" FontWeight="SemiBold" Foreground="{Binding MethodFore}"/>
+                                                </Border>
+                                                <TextBlock Grid.Column="3" Text="{Binding Time}" Foreground="{StaticResource Muted}" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- Attendance -->
+            <Grid x:Name="PageAttendance" Margin="34,30,34,30" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel Margin="0,0,0,18">
+                    <TextBlock Text="Attendance" Style="{StaticResource PageTitle}"/>
+                    <TextBlock x:Name="AttendanceCount" Style="{StaticResource Label}" FontSize="13" Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <WrapPanel Grid.Row="1" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,14,0">
+                        <TextBlock Text="From" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                        <DatePicker x:Name="FromPicker" Width="140" SelectedDateChanged="Filter_Changed"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,14,0">
+                        <TextBlock Text="To" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                        <DatePicker x:Name="ToPicker" Width="140" SelectedDateChanged="Filter_Changed"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,14,0">
+                        <TextBlock Text="Search name or ID" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                        <TextBox x:Name="SearchBox" Width="200" TextChanged="Filter_TextChanged"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,14,0">
+                        <TextBlock Text="View" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+                            <RadioButton x:Name="ViewSummary" Content="Daily summary" IsChecked="True" Margin="0,0,14,0" Checked="Filter_Changed"/>
+                            <RadioButton x:Name="ViewScans" Content="All scans" Margin="0,0,14,0" Checked="Filter_Changed"/>
+                            <CheckBox x:Name="ShowVoided" Content="Show voided" Checked="Filter_Changed" Unchecked="Filter_Changed"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Button Content="Add manual entry" Style="{StaticResource PrimaryButton}" VerticalAlignment="Bottom" Margin="0,0,10,0" Click="AddManual_Click" ToolTip="Ctrl+N"/>
+                    <Button Content="Export" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Click="ExportButton_Click"/>
+                </WrapPanel>
+
+                <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0">
+                    <Grid>
+                        <DataGrid x:Name="DayGrid" Style="{StaticResource Grid}" IsReadOnly="True" MouseDoubleClick="DayGrid_DoubleClick" ToolTip="Double-click a day to see and edit its scans">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="DATE" Binding="{Binding Date}" Width="92"/>
+                                <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="44"/>
+                                <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="*" MinWidth="150"/>
+                                <DataGridTextColumn Header="DEPARTMENT" Binding="{Binding Dept}" Width="108"/>
+                                <DataGridTextColumn Header="SHIFT" Binding="{Binding Shift}" Width="78"/>
+                                <DataGridTextColumn Header="IN" Binding="{Binding In}" Width="62"/>
+                                <DataGridTextColumn Header="OUT" Binding="{Binding Out}" Width="62"/>
+                                <DataGridTextColumn Header="WORKED" Binding="{Binding Worked}" Width="76"/>
+                                <DataGridTextColumn Header="LATE" Binding="{Binding Late}" Width="74"/>
+                                <DataGridTextColumn Header="EARLY" Binding="{Binding Early}" Width="84"/>
+                                <DataGridTextColumn Header="SCANS" Binding="{Binding Scans}" Width="76"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <DataGrid x:Name="ScanGrid" Style="{StaticResource Grid}" IsReadOnly="True" Visibility="Collapsed" MouseDoubleClick="ScanGrid_DoubleClick">
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Edit this scan…" Click="EditScan_Click"/>
+                                    <MenuItem Header="Void this scan…" Click="VoidScan_Click"/>
+                                    <MenuItem Header="Restore this scan" Click="RestoreScan_Click"/>
+                                    <MenuItem Header="Delete this manual entry" Click="DeleteManual_Click"/>
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="WHEN" Binding="{Binding When}" Width="180"/>
+                                <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="70"/>
+                                <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="*" MinWidth="150"/>
+                                <DataGridTextColumn Header="METHOD" Binding="{Binding Method}" Width="120"/>
+                                <DataGridTextColumn Header="NOTE" Binding="{Binding Note}" Width="2*"/>
+                                <DataGridTextColumn Header="STATUS" Binding="{Binding Status}" Width="90">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsVoided}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource Bad}"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock x:Name="AttendanceEmpty" Text="No scans in this period." Style="{StaticResource Label}" FontSize="14"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <local:ScheduleView x:Name="PageSchedule" Visibility="Collapsed"/>
+            <local:ReportsView x:Name="PageReports" Visibility="Collapsed"/>
+
+            <!-- People -->
+            <Grid x:Name="PagePeople" Margin="34,30,34,30" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel Margin="0,0,0,18">
+                    <TextBlock Text="People" Style="{StaticResource PageTitle}"/>
+                    <TextBlock Text="Enroll a person's fingerprint or face on the device under their ID number, then add them here. Double-click a name or department to change it." Style="{StaticResource Label}" FontSize="13" Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <WrapPanel Grid.Row="1" Margin="0,0,0,14">
+                    <StackPanel Margin="0,0,12,0">
+                        <TextBlock Text="ID" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                        <TextBox x:Name="NewId" Width="80"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,12,0">
+                        <TextBlock Text="Name" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                        <TextBox x:Name="NewName" Width="220"/>
+                    </StackPanel>
+                    <Button Content="Add person" Style="{StaticResource PrimaryButton}" VerticalAlignment="Bottom" Click="AddPerson_Click" Margin="0,0,10,0"/>
+                    <Button Content="Mark as former" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Click="RemovePerson_Click" Margin="0,0,10,0"/>
+                    <Button Content="Restore" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Click="RestorePerson_Click" Margin="0,0,10,0"/>
+                    <Button Content="Departments…" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Click="Departments_Click" Margin="0,0,10,0"/>
+                    <Button Content="Import names from CSV" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Click="ImportNames_Click" Margin="0,0,16,0"/>
+                    <StackPanel Margin="0,0,14,0">
+                        <TextBlock x:Name="NextIdHint" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="UnnamedBox" Width="270" Padding="10,8" SelectionChanged="UnnamedBox_Changed" ToolTip="IDs that scanned on the device but have no name yet. Pick one to fill in the ID."/>
+                    </StackPanel>
+                    <CheckBox x:Name="ShowFormer" Content="Show former" VerticalAlignment="Bottom" Margin="0,0,0,10" Checked="ShowFormer_Changed" Unchecked="ShowFormer_Changed"/>
+                </WrapPanel>
+
+                <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0">
+                    <DataGrid x:Name="PeopleGrid" Style="{StaticResource Grid}" CellEditEnding="PeopleGrid_CellEditEnding">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="ID" Binding="{Binding Enroll}" Width="90" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="STATUS" Binding="{Binding Status}" Width="100" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="*" MinWidth="150"/>
+                            <DataGridComboBoxColumn x:Name="DeptColumn" Header="DEPARTMENT" SelectedItemBinding="{Binding Department, UpdateSourceTrigger=PropertyChanged}" Width="200"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </Grid>
+
+            <local:LogView x:Name="PageLog" Visibility="Collapsed"/>
+
+            <!-- Settings -->
+            <ScrollViewer x:Name="PageSettings" Margin="34,30,34,30" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel MaxWidth="700" HorizontalAlignment="Left">
+                    <TextBlock Text="Settings" Style="{StaticResource PageTitle}" Margin="0,0,0,18"/>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="Device and sync" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,0,0,14"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Device IP address" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="SetIp"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Port" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="SetPort"/>
+                                </StackPanel>
+                            </Grid>
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Sync every (seconds)" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="SetInterval"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Default work start" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="SetStart"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="4">
+                                    <TextBlock Text="Default work end" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="SetEnd"/>
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                       Text="Default hours apply only to days where a person has no shift in the Schedule."/>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                                <TextBlock Text="Language" VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource Ink}"/>
+                                <ComboBox x:Name="SetLanguage" Width="190" Margin="14,0,0,0" Padding="10,7">
+                                    <ComboBoxItem Content="English" Tag="en"/>
+                                    <ComboBoxItem Content="Azərbaycanca" Tag="az"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <CheckBox x:Name="SetClockAuto" Content="Set the device clock to this PC once a day" Margin="0,14,0,0" FontSize="13"/>
+                            <CheckBox x:Name="SetAutostart" Content="Start with Windows (minimized)" Margin="0,10,0,0" FontSize="13"/>
+                            <CheckBox x:Name="SetTray" Content="Keep running in the tray when the window is closed" Margin="0,10,0,0" FontSize="13"/>
+                            <CheckBox x:Name="SetAck" Margin="0,10,0,0" FontSize="13"
+                                      Content="Take over from the original software: remove scans from the device once they are saved here"/>
+                            <TextBlock Style="{StaticResource Label}" TextWrapping="Wrap" Margin="24,2,0,0"
+                                       Text="Leave this off while the original software is still in use, otherwise it will stop receiving new scans."/>
+
+                            <StackPanel Margin="0,14,0,0" Orientation="Horizontal">
+                                <CheckBox x:Name="SetAutoImport" Content="Also copy new scans from the original software every" VerticalAlignment="Center" FontSize="13"/>
+                                <TextBox x:Name="SetImportMinutes" Width="56" Margin="10,0,10,0"/>
+                                <TextBlock Text="minutes" VerticalAlignment="Center" FontSize="13"/>
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource Label}" TextWrapping="Wrap" Margin="24,2,0,0"
+                                       Text="Catches scans the original software collected before this app did. Read-only, and it never changes the original."/>
+
+                            <StackPanel Margin="0,14,0,0" Orientation="Horizontal">
+                                <TextBlock Text="Keep the activity log for" VerticalAlignment="Center" FontSize="13"/>
+                                <TextBox x:Name="SetLogDays" Width="64" Margin="10,0,10,0"/>
+                                <TextBlock Text="days" VerticalAlignment="Center" FontSize="13"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                                <Button Content="Save settings" Style="{StaticResource PrimaryButton}" Click="SaveSettings_Click"/>
+                                <Button Content="Set device clock now" Style="{StaticResource GhostButton}" Margin="10,0,0,0" Click="SetClock_Click"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="Import from the original software" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                            <TextBlock TextWrapping="Wrap" Style="{StaticResource Label}" FontSize="13" Margin="0,6,0,14"
+                                       Text="Copies old scans, employee names, departments, shifts and leave into this app. It only reads from the original database and never changes it. Safe to run more than once; anything changed here is kept."/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="ImportButton" Content="Import history and names" Style="{StaticResource GhostButton}" Click="ImportPdks_Click"/>
+                                <TextBlock x:Name="ImportResult" VerticalAlignment="Center" Margin="14,0,0,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="400"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="Backup and restore" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                            <TextBlock TextWrapping="Wrap" Style="{StaticResource Label}" FontSize="13" Margin="0,6,0,14"
+                                       Text="A backup is made automatically once a day (the last 14 are kept). Restoring replaces everything in this app with the chosen backup after a restart; the current data is saved first."/>
+                            <TextBlock x:Name="BackupInfo" Style="{StaticResource Label}" FontSize="12" Margin="0,0,0,12"/>
+                            <WrapPanel>
+                                <Button Content="Back up now" Style="{StaticResource GhostButton}" Margin="0,0,10,8" Click="BackupNow_Click"/>
+                                <Button Content="Restore from backup…" Style="{StaticResource GhostButton}" Margin="0,0,10,8" Click="Restore_Click"/>
+                                <Button Content="Open backups folder" Style="{StaticResource GhostButton}" Margin="0,0,0,8" Click="OpenBackups_Click"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="About" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                            <TextBlock x:Name="AboutText" Style="{StaticResource Label}" FontSize="13" TextWrapping="Wrap" Margin="0,8,0,12"/>
+                            <TextBlock x:Name="DataFolder" Style="{StaticResource Label}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                            <Button Content="Open data folder" Style="{StaticResource GhostButton}" HorizontalAlignment="Left" Click="OpenFolder_Click"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Toast -->
+            <Border x:Name="Toast" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,24,28,0"
+                    Background="{StaticResource Ink}" CornerRadius="12" Padding="18,12">
+                <TextBlock x:Name="ToastText" Foreground="White" FontSize="13" MaxWidth="420" TextWrapping="Wrap"/>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

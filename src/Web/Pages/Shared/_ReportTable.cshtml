@@ -1,0 +1,30 @@
+@model ReportTable
+@{
+    // Shows a report table with a filter box, Excel/CSV download and print, like the desktop details window.
+    var idCol = Model.Headers.IndexOf("ID");
+    var query = Context.Request.QueryString.Value ?? "";
+    var sep = query.Length > 0 ? "&" : "?";
+}
+<div class="row no-print" style="margin-bottom:12px">
+    <label class="f">@WebApp.T("Filter")<input type="search" data-filter="#report-table" style="width:220px"></label>
+    <span class="spacer"></span>
+    <a class="btn" href="@(query)@(sep)handler=Export&fmt=xlsx">@WebApp.T("Excel")</a>
+    <a class="btn" href="@(query)@(sep)handler=Export&fmt=csv">@WebApp.T("CSV")</a>
+    <button class="btn" type="button" data-print>@WebApp.T("Print")</button>
+</div>
+<div class="card flush">
+    <div class="table-wrap">
+        <table id="report-table">
+            <thead><tr>@foreach (var h in Model.Headers) { <th>@h</th> }</tr></thead>
+            <tbody>
+                @foreach (var r in Model.Rows)
+                {
+                    var link = idCol >= 0 && idCol < r.Length && uint.TryParse(r[idCol], out var id) ? $"/Reports?kind=timesheet&person={id}" : null;
+                    <tr data-href="@link">@foreach (var c in r) { <td>@c</td> }</tr>
+                }
+            </tbody>
+        </table>
+        @if (Model.Rows.Count == 0) { <div class="empty">@WebApp.T("Nothing to report for these settings.")</div> }
+    </div>
+</div>
+@if (Model.Footer.Length > 0) { <div class="footer-note">@Model.Footer</div> }

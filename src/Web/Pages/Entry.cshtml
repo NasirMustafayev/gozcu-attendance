@@ -1,0 +1,120 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = Editing ? T("Edit scan") : T("Add manual entry");
+    ViewData["Nav"] = "/Attendance";
+}
+<div class="card" style="max-width:560px">
+    <h1 style="font-size:20px">@(Editing ? T("Edit scan") : T("Add manual entry"))</h1>
+    <p class="sub">
+        @(Editing ? T("Change the time of this scan. A device scan is never altered: it is voided and replaced by a manual entry, so the original stays in the audit list.")
+                  : T("Use this when a scan is missing, for example the device was offline or someone forgot to scan. Fill in the log in time, the log off time, or both. Entries are marked as manual in every report and kept in the audit list."))
+    </p>
+    <form method="post" class="grid" style="gap:14px">
+        <input type="hidden" name="id" value="@Id">
+        <input type="hidden" name="back" value="@BackUrl">
+        <label class="f">@T("Person")
+            <select name="enroll" disabled="@Editing" required>
+                <option value=""></option>
+                @foreach (var p in Store.GetPeople().Where(p => p.Active || p.Enroll == Enroll).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    <option value="@p.Enroll" selected="@(p.Enroll == Enroll)">@p.Name · @p.Enroll</option>
+                }
+            </select>
+        </label>
+        @if (Editing) { <input type="hidden" name="enroll" value="@Enroll"> }
+        <div class="row">
+            <label class="f">@T("Date")<input type="date" name="date" value="@WebApp.Iso(Date)" required></label>
+            <label class="f">@(Editing ? T("Time (HH:mm)") : T("Log in (HH:mm)"))<input type="time" name="login" value="@LogIn"></label>
+            @if (!Editing) { <label class="f">@T("Log off (HH:mm)")<input type="time" name="logoff" value="@LogOff"></label> }
+        </div>
+        <label class="f">@T("Reason")<textarea name="note" required>@Note</textarea></label>
+        @if (Error is not null) { <div class="error-text">@Error</div> }
+        <div class="row">
+            <span class="spacer"></span>
+            <a class="btn" href="@BackUrl">@T("Cancel")</a>
+            <button class="btn primary" type="submit">@(Editing ? T("Save changes") : T("Add entry"))</button>
+        </div>
+    </form>
+</div>
+
+@functions {
+    public long? Id { get; set; }
+    public bool Editing => Id is not null;
+    public uint? Enroll { get; set; }
+    public DateTime Date { get; set; } = DateTime.Today;
+    public string LogIn { get; set; } = "";
+    public string LogOff { get; set; } = "";
+    public string Note { get; set; } = "";
+    public string BackUrl { get; set; } = "/Attendance";
+    public string? Error { get; set; }
+
+    private void SetBack(string? back) => BackUrl = back is { Length: > 0 } b && Url.IsLocalUrl(b) ? b : "/Attendance";
+
+    public IActionResult OnGet(long? id, uint? enroll, string? date, string? back)
+    {
+        if (!CanEditData) return Denied();
+        SetBack(back);
+        if (id is { } scanId)
+        {
+            var s = Store.GetScan(scanId);
+            if (s is null || s.Voided) { FlashError = T("Scan not found."); return LocalRedirect(BackUrl); }
+            Id = scanId;
+            Enroll = s.EnrollNumber;
+            Date = s.Timestamp.Date;
+            LogIn = s.Timestamp.ToString("HH:mm");
+            Note = s.IsManual ? s.Note ?? "" : "";
+        }
+        else
+        {
+            Enroll = enroll;
+            Date = ParseDate(date) ?? DateTime.Today;
+            LogIn = Date == DateTime.Today ? DateTime.Now.ToString("HH:mm") : "09:00";
+        }
+        return Page();
+    }
+
+    public IActionResult OnPost(long? id, uint? enroll, string? date, string? login, string? logoff, string? note, string? back)
+    {
+        if (!CanEditData) return Denied();
+        SetBack(back);
+        Id = id; Enroll = enroll; LogIn = login ?? ""; LogOff = logoff ?? ""; Note = (note ?? "").Trim();
+        Date = ParseDate(date) ?? DateTime.Today;
+
+        if (enroll is null) { Error = T("Choose a person from the list, or type their ID number."); return Page(); }
+        var tin = string.IsNullOrWhiteSpace(login) ? (TimeSpan?)null : ParseTime(login);
+        var tout = Editing || string.IsNullOrWhiteSpace(logoff) ? (TimeSpan?)null : ParseTime(logoff);
+        if ((!string.IsNullOrWhiteSpace(login) && tin is null) || (!Editing && !string.IsNullOrWhiteSpace(logoff) && tout is null)) { Error = T("Times should look like 09:30."); return Page(); }
+        if (tin is null && tout is null) { Error = T("Enter the log in time, the log off time, or both."); return Page(); }
+        if (tin is { } a && tout is { } b && b <= a) { Error = T("The log off time must be after the log in time."); return Page(); }
+        if ((Date + (tout ?? tin!.Value)) > DateTime.Now.AddMinutes(5)) { Error = T("That moment is in the future."); return Page(); }
+        if (Note.Length == 0) { Error = T("Please write a short reason so the entry can be explained later."); return Page(); }
+
+        var name = Ctx.NameOf(enroll.Value);
+        if (Editing)
+        {
+            var s = Store.GetScan(id!.Value);
+            if (s is null) { FlashError = T("Scan not found."); return LocalRedirect(BackUrl); }
+            var when = Date + tin!.Value;
+            if (!Store.CorrectScan(s.Id, when, Note)) { Error = T("An entry at that exact time already exists."); return Page(); }
+            Log("Warn", "Manual", $"Scan edited: {name} (ID {s.EnrollNumber}) {s.Timestamp:yyyy-MM-dd HH:mm:ss} → {when:yyyy-MM-dd HH:mm}. Reason: {Note}");
+            Flash = Loc.F("Scan changed to {0:HH:mm}.", when);
+            return LocalRedirect(BackUrl);
+        }
+
+        var added = new List<string>();
+        foreach (var (label, t) in new[] { ("log in", tin), ("log off", tout) })
+        {
+            if (t is not { } time) continue;
+            var moment = Date + time;
+            if (Store.AddManual(enroll.Value, moment, $"{label}: {Note}"))
+            {
+                added.Add($"{label} {moment:HH:mm}");
+                Log("Info", "Manual", $"Manual {label} added for {name} (ID {enroll}) at {moment:yyyy-MM-dd HH:mm}: {Note}");
+            }
+        }
+        if (added.Count == 0) { Error = T("Those entries already exist."); return Page(); }
+        Flash = Loc.F("Added for {0}: {1}.", name, string.Join(", ", added));
+        return LocalRedirect(BackUrl);
+    }
+}

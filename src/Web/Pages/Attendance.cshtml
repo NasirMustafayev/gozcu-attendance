@@ -1,0 +1,204 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Attendance");
+    ViewData["Nav"] = "/Attendance";
+    var ctx = Ctx;
+    var back = Request.Path + Request.QueryString;
+}
+<h1>@T("Attendance")</h1>
+<div class="sub">
+    @(Summary ? Loc.F("{0} daily row(s) from {1} scan(s)", Days.Count, Counted.Count)
+              : Loc.F("{0} scan(s)", All.Count) + (All.Count(r => r.IsManual) > 0 ? Loc.F(" · {0} manual", All.Count(r => r.IsManual)) : "")
+                + (All.Count(r => r.Voided) > 0 ? Loc.F(" · {0} voided", All.Count(r => r.Voided)) : ""))
+</div>
+
+<form method="get" class="row no-print" style="margin-bottom:14px">
+    <label class="f">@T("From")<input type="date" name="from" value="@WebApp.Iso(From)"></label>
+    <label class="f">@T("To")<input type="date" name="to" value="@WebApp.Iso(To)"></label>
+    <label class="f">@T("Search name or ID")<input type="search" name="q" value="@Q" style="width:200px"></label>
+    <label class="f">@T("View")
+        <select name="view" data-autosubmit>
+            <option value="summary" selected="@Summary">@T("Daily summary")</option>
+            <option value="scans" selected="@(!Summary)">@T("All scans")</option>
+        </select>
+    </label>
+    @if (!Summary)
+    {
+        <label class="check"><input type="checkbox" name="voided" value="1" checked="@ShowVoided" data-autosubmit> @T("Show voided")</label>
+    }
+    <button class="btn" type="submit">@T("Show")</button>
+    <span class="spacer"></span>
+    @if (CanEditData)
+    {
+        <a class="btn primary" href="/Entry?back=@Uri.EscapeDataString(back)">@T("Add manual entry")</a>
+    }
+    <a class="btn" href="@(back)@(Request.QueryString.HasValue ? "&" : "?")handler=Export&fmt=xlsx">@T("Excel")</a>
+</form>
+
+<div class="card flush">
+    <div class="table-wrap">
+        @if (Summary)
+        {
+            <table>
+                <thead><tr>
+                    <th>@T("DATE")</th><th>@T("ID")</th><th>@T("NAME")</th><th>@T("DEPARTMENT")</th><th>@T("SHIFT")</th>
+                    <th>@T("IN")</th><th>@T("OUT")</th><th>@T("WORKED")</th><th>@T("LATE")</th><th>@T("EARLY")</th><th class="num">@T("SCANS")</th>
+                </tr></thead>
+                <tbody>
+                    @foreach (var r in Days)
+                    {
+                        <tr data-href="/Attendance?view=scans&from=@WebApp.Iso(r.Date)&to=@WebApp.Iso(r.Date)&q=@r.Enroll">
+                            <td>@WebApp.Day(r.Date)</td><td>@r.Enroll</td><td>@(r.Name.Length > 0 ? r.Name : "—")</td>
+                            <td>@(ctx.DeptName(r.Enroll) is { Length: > 0 } dn ? dn : "—")</td><td>@(r.Shift.Length > 0 ? r.Shift : "—")</td>
+                            <td>@r.FirstIn.ToString("HH:mm")</td><td>@(r.LastOut?.ToString("HH:mm") ?? "—")</td>
+                            <td>@WebApp.Hm(r.Worked)</td><td class="@(r.LateMinutes > 0 ? "c-warn" : "")">@WebApp.Min(r.LateMinutes)</td>
+                            <td class="@(r.EarlyLeaveMinutes > 0 ? "c-violet" : "")">@WebApp.Min(r.EarlyLeaveMinutes)</td><td class="num">@r.Punches</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (Days.Count == 0) { <div class="empty">@T("No scans in this period.")</div> }
+        }
+        else
+        {
+            <table>
+                <thead><tr>
+                    <th>@T("WHEN")</th><th>@T("ID")</th><th>@T("NAME")</th><th>@T("METHOD")</th><th>@T("NOTE")</th><th>@T("STATUS")</th>
+                    @if (CanEditData) { <th class="no-print">@T("Actions")</th> }
+                </tr></thead>
+                <tbody>
+                    @foreach (var r in All.OrderByDescending(r => r.Timestamp))
+                    {
+                        <tr class="@(r.Voided ? "voided" : "")">
+                            <td>@Loc.Dates(r.Timestamp.ToString("ddd d MMM HH:mm:ss", CultureInfo.InvariantCulture))</td>
+                            <td>@r.EnrollNumber</td>
+                            <td>@(ctx.Names.TryGetValue(r.EnrollNumber, out var nm) ? nm : "—")</td>
+                            <td><span class="pill @(r.IsManual ? "manual" : r.VerifyCode == 5 ? "face" : r.VerifyCode == 1 ? "finger" : "")">@r.VerifyName</span></td>
+                            <td>@r.Note</td>
+                            <td class="keep">@if (r.Voided) { <span class="pill bad">@T("Voided")</span> }</td>
+                            @if (CanEditData)
+                            {
+                                <td class="keep no-print"><div class="actions">
+                                    @if (!r.Voided)
+                                    {
+                                        <a class="btn small" href="/Entry?id=@r.Id&back=@Uri.EscapeDataString(back)">@T("Edit")</a>
+                                        <form method="post" asp-page-handler="Void" class="inline" onsubmit="var x=prompt('@T("Reason")');if(!x)return false;this.reason.value=x;">
+                                            <input type="hidden" name="id" value="@r.Id"><input type="hidden" name="reason"><input type="hidden" name="back" value="@back">
+                                            <button class="btn small danger">@T("Void")</button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form method="post" asp-page-handler="Restore" class="inline">
+                                            <input type="hidden" name="id" value="@r.Id"><input type="hidden" name="back" value="@back">
+                                            <button class="btn small">@T("Restore")</button>
+                                        </form>
+                                    }
+                                    @if (r.IsManual)
+                                    {
+                                        <form method="post" asp-page-handler="Delete" class="inline" data-confirm="@Loc.F("Delete the manual entry for {0} at {1}?", nm, r.Timestamp.ToString("yyyy-MM-dd HH:mm"))">
+                                            <input type="hidden" name="id" value="@r.Id"><input type="hidden" name="back" value="@back">
+                                            <button class="btn small danger">@T("Delete")</button>
+                                        </form>
+                                    }
+                                </div></td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (All.Count == 0) { <div class="empty">@T("No scans in this period.")</div> }
+        }
+    </div>
+</div>
+
+@functions {
+    public DateTime From { get; set; }
+    public DateTime To { get; set; }
+    public string Q { get; set; } = "";
+    public bool Summary { get; set; } = true;
+    public bool ShowVoided { get; set; }
+    public List<GozcuStandalone.Device.AttendanceRecord> All { get; set; } = new();
+    public List<GozcuStandalone.Device.AttendanceRecord> Counted { get; set; } = new();
+    public List<DailyRow> Days { get; set; } = new();
+
+    private void Load(string? from, string? to, string? q, string? view, string? voided)
+    {
+        To = ParseDate(to) ?? DateTime.Today;
+        From = ParseDate(from) ?? To.AddDays(-6);
+        if (To < From) (From, To) = (To, From);
+        Q = (q ?? "").Trim();
+        Summary = view != "scans";
+        ShowVoided = !Summary && voided == "1";
+
+        var ctx = Ctx;
+        bool Match(uint id) => ctx.Allows(id) && (Q.Length == 0 || id.ToString().Contains(Q, StringComparison.Ordinal)
+            || (ctx.Names.TryGetValue(id, out var n) && n.Contains(Q, StringComparison.CurrentCultureIgnoreCase)));
+
+        All = Store.GetRange(From, To.AddDays(1), includeVoided: ShowVoided).Where(r => Match(r.EnrollNumber)).ToList();
+        Counted = All.Where(r => !r.Voided).ToList();
+        Days = ctx.Daily(Counted);
+    }
+
+    public void OnGet(string? from, string? to, string? q, string? view, string? voided) => Load(from, to, q, view, voided);
+
+    public IActionResult OnGetExport(string? from, string? to, string? q, string? view, string? voided, string? fmt)
+    {
+        Load(from, to, q, view, voided);
+        var ctx = Ctx;
+        var table = new ReportTable { Title = Summary ? "Daily attendance" : "All scans", Subtitle = Loc.F("{0} to {1}", WebApp.Iso(From), WebApp.Iso(To)) };
+        if (Summary)
+        {
+            table.Headers.AddRange(new[] { "Date", "ID", "Name", "Department", "Shift", "First in", "Last out", "Worked", "Late", "Early leave", "Scans" });
+            foreach (var r in Days)
+                table.Rows.Add(new[] { WebApp.Iso(r.Date), r.Enroll.ToString(), r.Name, ctx.DeptName(r.Enroll), r.Shift, r.FirstIn.ToString("HH:mm"),
+                    r.LastOut?.ToString("HH:mm") ?? "", r.Worked == TimeSpan.Zero ? "" : $"{(int)r.Worked.TotalHours}:{r.Worked.Minutes:00}",
+                    r.LateMinutes > 0 ? r.LateMinutes.ToString() : "", r.EarlyLeaveMinutes > 0 ? r.EarlyLeaveMinutes.ToString() : "", r.Punches.ToString() });
+        }
+        else
+        {
+            table.Headers.AddRange(new[] { "Time", "ID", "Name", "Department", "Method", "Note", "Status" });
+            foreach (var r in All.OrderBy(r => r.Timestamp))
+                table.Rows.Add(new[] { r.Timestamp.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture), r.EnrollNumber.ToString(), ctx.NameOf(r.EnrollNumber),
+                    ctx.DeptName(r.EnrollNumber), r.VerifyName, r.Note ?? "", r.Voided ? Loc.T("Voided") : "" });
+        }
+        return Export(Loc.Localize(table), fmt, Summary ? "attendance_daily" : "attendance_scans");
+    }
+
+    private IActionResult Back(string? back) => LocalRedirect(back is { Length: > 0 } b && Url.IsLocalUrl(b) ? b : "/Attendance");
+
+    public IActionResult OnPostVoid(long id, string? reason, string? back)
+    {
+        if (!CanEditData) return Denied();
+        var s = Store.GetScan(id);
+        if (s is null) { FlashError = T("Scan not found."); return Back(back); }
+        if (string.IsNullOrWhiteSpace(reason)) { FlashError = T("Please write a short reason so the entry can be explained later."); return Back(back); }
+        Store.SetVoided(id, true, reason.Trim());
+        Log("Warn", "Manual", $"Scan voided: {Ctx.NameOf(s.EnrollNumber)} (ID {s.EnrollNumber}) {s.Timestamp:yyyy-MM-dd HH:mm:ss}. Reason: {reason.Trim()}");
+        Flash = T("Scan voided.");
+        return Back(back);
+    }
+
+    public IActionResult OnPostRestore(long id, string? back)
+    {
+        if (!CanEditData) return Denied();
+        var s = Store.GetScan(id);
+        if (s is null) { FlashError = T("Scan not found."); return Back(back); }
+        Store.SetVoided(id, false);
+        Log("Info", "Manual", $"Scan restored: {Ctx.NameOf(s.EnrollNumber)} (ID {s.EnrollNumber}) {s.Timestamp:yyyy-MM-dd HH:mm:ss}.");
+        Flash = T("Scan restored.");
+        return Back(back);
+    }
+
+    public IActionResult OnPostDelete(long id, string? back)
+    {
+        if (!CanEditData) return Denied();
+        var s = Store.GetScan(id);
+        if (s is null || !s.IsManual) { FlashError = T("Only manual entries can be deleted. Void a device scan instead."); return Back(back); }
+        Store.DeleteManual(id);
+        Log("Warn", "Manual", $"Manual entry deleted: {Ctx.NameOf(s.EnrollNumber)} (ID {s.EnrollNumber}) {s.Timestamp:yyyy-MM-dd HH:mm:ss}.");
+        Flash = T("Saved.");
+        return Back(back);
+    }
+}

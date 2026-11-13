@@ -1,0 +1,87 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Departments");
+    ViewData["Nav"] = "/People";
+    var counts = Store.GetPersonDepartments().GroupBy(p => p.Value).ToDictionary(g => g.Key, g => g.Count());
+}
+<div class="row"><h1>@T("Departments")</h1><span class="spacer"></span><a class="btn" href="/People">@T("Back")</a></div>
+<div class="sub">@T("Use departments to look at one group of people at a time. Assign people to a department on the People page.")</div>
+
+@if (CanEditData)
+{
+    <form method="post" asp-page-handler="Add" class="row" style="margin-bottom:14px">
+        <label class="f">@T("New department")<input type="text" name="name" required style="width:240px"></label>
+        <button class="btn primary">@T("Add department")</button>
+    </form>
+}
+<div class="card flush" style="max-width:760px">
+    <table>
+        <thead><tr><th>@T("NAME")</th><th class="num">@T("PEOPLE")</th>@if (CanEditData) { <th>@T("Actions")</th> }</tr></thead>
+        <tbody>
+            @foreach (var d in Store.GetDepartments())
+            {
+                <tr>
+                    @if (CanEditData)
+                    {
+                        <td>
+                            <form method="post" asp-page-handler="Rename" class="row" style="gap:6px">
+                                <input type="hidden" name="id" value="@d.Id"><input type="text" name="name" value="@d.Name">
+                                <button class="btn small">@T("Rename")</button>
+                            </form>
+                        </td>
+                    }
+                    else { <td>@d.Name</td> }
+                    <td class="num">@counts.GetValueOrDefault(d.Id)</td>
+                    @if (CanEditData)
+                    {
+                        <td>
+                            <form method="post" asp-page-handler="Delete" data-confirm="@Loc.F("Delete the “{0}” department?{1}", d.Name, counts.GetValueOrDefault(d.Id) > 0 ? Loc.F("\n\n{0} people in it will have no department.", counts.GetValueOrDefault(d.Id)) : "")">
+                                <input type="hidden" name="id" value="@d.Id"><button class="btn small danger">@T("Delete")</button>
+                            </form>
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@functions {
+    public void OnGet() { }
+
+    public IActionResult OnPostAdd(string? name)
+    {
+        if (!CanEditData) return Denied();
+        name = (name ?? "").Trim();
+        if (name.Length == 0) { FlashError = T("This can't be empty."); return RedirectToPage(); }
+        if (Store.GetDepartments().Any(d => string.Equals(d.Name, name, StringComparison.CurrentCultureIgnoreCase))) { FlashError = T("A department with that name already exists."); return RedirectToPage(); }
+        Store.AddDepartment(name);
+        Log("Info", "People", $"Department “{name}” created.");
+        Flash = T("Department saved.");
+        return RedirectToPage();
+    }
+
+    public IActionResult OnPostRename(int id, string? name)
+    {
+        if (!CanEditData) return Denied();
+        name = (name ?? "").Trim();
+        if (name.Length == 0) { FlashError = T("This can't be empty."); return RedirectToPage(); }
+        var old = Store.GetDepartments().FirstOrDefault(d => d.Id == id)?.Name;
+        Store.RenameDepartment(id, name);
+        Log("Info", "People", $"Department “{old}” renamed to “{name}”.");
+        Flash = T("Department saved.");
+        return RedirectToPage();
+    }
+
+    public IActionResult OnPostDelete(int id)
+    {
+        if (!CanEditData) return Denied();
+        var old = Store.GetDepartments().FirstOrDefault(d => d.Id == id)?.Name;
+        Store.DeleteDepartment(id);
+        if (Dept == id) Response.Cookies.Delete("dept");
+        Log("Warn", "People", $"Department “{old}” deleted.");
+        Flash = T("Department deleted.");
+        return RedirectToPage();
+    }
+}

@@ -1,0 +1,147 @@
+@page
+@inherits WebPage
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@{
+    ViewData["Title"] = T("Settings");
+    ViewData["Nav"] = "/Settings";
+    var me = Store.GetWebUser(Who);
+    string[] roles = { AttendanceStore.RoleAdmin, AttendanceStore.RoleEditor, AttendanceStore.RoleViewer };
+}
+<h1>@T("Settings")</h1>
+<div class="sub">@T("Device and sync settings are changed in the desktop app.")</div>
+
+<div class="grid" style="max-width:860px">
+    <div class="card">
+        <h2>@T("Account")</h2>
+        <form method="post" asp-page-handler="Language" class="row" style="margin-bottom:16px">
+            <label class="f">@T("Language")
+                <select name="language"><option value="en">English</option><option value="az" selected="@(me?.Language == "az")">Azərbaycanca</option></select>
+            </label>
+            <button class="btn">@T("Save")</button>
+        </form>
+        <h2>@T("Change password")</h2>
+        <form method="post" asp-page-handler="Password" class="row">
+            <label class="f">@T("Current password")<input type="password" name="current" autocomplete="current-password" required></label>
+            <label class="f">@T("New password")<input type="password" name="password" autocomplete="new-password" minlength="8" required></label>
+            <label class="f">@T("Repeat password")<input type="password" name="password2" autocomplete="new-password" minlength="8" required></label>
+            <button class="btn primary">@T("Change password")</button>
+        </form>
+    </div>
+
+    @if (IsAdminUser)
+    {
+        <div class="card">
+            <h2>@T("Web users")</h2>
+            <div class="muted" style="margin:-6px 0 12px">@T("Administrators manage users; editors change attendance, people and schedules; viewers only look.")</div>
+            <table>
+                <thead><tr><th>@T("Username")</th><th>@T("Name")</th><th>@T("Role")</th><th>@T("New password")</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var u in Store.GetWebUsers())
+                    {
+                        <tr>
+                            <td>@u.Username</td>
+                            <td colspan="4">
+                                <div class="row" style="gap:6px">
+                                    <form method="post" asp-page-handler="SaveUser" class="row" style="gap:6px">
+                                        <input type="hidden" name="username" value="@u.Username">
+                                        <input type="hidden" name="language" value="@u.Language">
+                                        <input type="text" name="displayName" value="@u.DisplayName" style="width:170px">
+                                        <select name="role">@foreach (var r in roles) { <option value="@r" selected="@(u.Role == r)">@T(r)</option> }</select>
+                                        <input type="password" name="password" placeholder="@T("Leave the password empty to keep it.")" autocomplete="new-password" style="width:230px">
+                                        <button class="btn small">@T("Save")</button>
+                                    </form>
+                                    @if (!string.Equals(u.Username, Who, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <form method="post" asp-page-handler="DeleteUser" data-confirm="@T("Remove") @u.Username?">
+                                            <input type="hidden" name="username" value="@u.Username"><button class="btn small danger">@T("Remove")</button>
+                                        </form>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <h2 style="margin-top:18px">@T("Add user")</h2>
+            <form method="post" asp-page-handler="SaveUser" class="row">
+                <input type="hidden" name="isNew" value="1">
+                <label class="f">@T("Username")<input type="text" name="username" required autocomplete="off"></label>
+                <label class="f">@T("Name")<input type="text" name="displayName" required></label>
+                <label class="f">@T("Role")<select name="role">@foreach (var r in roles) { <option value="@r" selected="@(r == AttendanceStore.RoleViewer)">@T(r)</option> }</select></label>
+                <label class="f">@T("Language")<select name="language"><option value="en">English</option><option value="az">Azərbaycanca</option></select></label>
+                <label class="f">@T("Password")<input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+                <button class="btn primary">@T("Add user")</button>
+            </form>
+        </div>
+    }
+
+    <div class="card">
+        <h2>@T("About")</h2>
+        <div class="muted">@Loc.F("Attendance {0}. Reads attendance from the face and fingerprint terminal on your network. {1:N0} scans stored, database {2:0.0} MB.",
+            typeof(WebPage).Assembly.GetName().Version?.ToString(3), Store.Count(), new FileInfo(Store.DatabasePath).Length / 1048576.0)</div>
+    </div>
+</div>
+
+@functions {
+    public void OnGet() { }
+
+    private async Task Reissue(string username)
+    {
+        if (Store.GetWebUser(username) is { } u)
+            await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, WebApp.Principal(u));
+    }
+
+    public async Task<IActionResult> OnPostLanguageAsync(string? language)
+    {
+        Store.SetWebUserLanguage(Who, language == "az" ? "az" : "en");
+        await Reissue(Who);
+        Loc.UseForCurrentFlow(language);
+        Flash = T("Language saved.");
+        return RedirectToPage();
+    }
+
+    public IActionResult OnPostPassword(string? current, string? password, string? password2)
+    {
+        if (Store.CheckWebLogin(Who, current ?? "") is not { } me) { FlashError = T("The current password is wrong."); return RedirectToPage(); }
+        if ((password ?? "").Length < 8) { FlashError = T("Use at least 8 characters."); return RedirectToPage(); }
+        if (password != password2) { FlashError = T("The passwords do not match."); return RedirectToPage(); }
+        Store.SaveWebUser(me.Username, me.DisplayName, me.Role, me.Language, password);
+        Log("Info", "Web", $"{me.Username} changed their web password.");
+        Flash = T("Password changed.");
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostSaveUserAsync(string? username, string? displayName, string? role, string? language, string? password, string? isNew)
+    {
+        if (!IsAdminUser) return Denied();
+        username = (username ?? "").Trim();
+        displayName = (displayName ?? "").Trim();
+        role = role is AttendanceStore.RoleAdmin or AttendanceStore.RoleEditor ? role : AttendanceStore.RoleViewer;
+        if (username.Length == 0 || displayName.Length == 0) { FlashError = T("Fill in every field."); return RedirectToPage(); }
+        var exists = Store.GetWebUser(username) is not null;
+        var pw = string.IsNullOrEmpty(password) ? null : password;
+        if ((isNew == "1" || !exists) && pw is null) { FlashError = T("Fill in every field."); return RedirectToPage(); }
+        if (pw is { Length: < 8 }) { FlashError = T("Use at least 8 characters."); return RedirectToPage(); }
+        // Never lock the last administrator out.
+        if (exists && role != AttendanceStore.RoleAdmin && Store.GetWebUser(username)!.Role == AttendanceStore.RoleAdmin
+            && Store.GetWebUsers().Count(u => u.Role == AttendanceStore.RoleAdmin) == 1)
+            role = AttendanceStore.RoleAdmin;
+
+        Store.SaveWebUser(username, displayName, role, language == "az" ? "az" : "en", pw);
+        Log("Info", "Web", $"Web user “{username}” saved (role {role}{(pw is null ? "" : ", password set")}).");
+        if (string.Equals(username, Who, StringComparison.OrdinalIgnoreCase)) await Reissue(Who);
+        Flash = T("User saved.");
+        return RedirectToPage();
+    }
+
+    public IActionResult OnPostDeleteUser(string? username)
+    {
+        if (!IsAdminUser) return Denied();
+        if (string.Equals(username, Who, StringComparison.OrdinalIgnoreCase)) { FlashError = T("You can't remove your own account."); return RedirectToPage(); }
+        Store.DeleteWebUser(username ?? "");
+        Log("Warn", "Web", $"Web user “{username}” removed.");
+        Flash = T("User removed.");
+        return RedirectToPage();
+    }
+}

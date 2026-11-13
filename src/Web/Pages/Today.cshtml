@@ -1,0 +1,24 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = Table!.Title;
+    ViewData["Nav"] = "/Index";
+}
+<div class="row"><h1>@Table.Title</h1><span class="spacer"></span><a class="btn no-print" href="/">@T("Back")</a></div>
+<div class="sub">@Table.Subtitle</div>
+<partial name="_ReportTable" model="Table" />
+
+@functions {
+    public ReportTable? Table { get; set; }
+
+    private ReportTable Build(string? kind) =>
+        Loc.Localize(Reports.Today(Ctx, kind is "present" or "notin" or "late" or "early" ? kind : "scans"));
+
+    public void OnGet(string? kind) => Table = Build(kind);
+
+    public IActionResult OnGetExport(string? kind, string? fmt)
+    {
+        var t = Build(kind);
+        return Export(t, fmt, "today_" + (kind ?? "scans"));
+    }
+}
