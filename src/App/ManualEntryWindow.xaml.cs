@@ -12,12 +12,14 @@ public partial class ManualEntryWindow : Window
     public string Note { get; private set; } = "";
     public DateTime? LogIn { get; private set; }
     public DateTime? LogOff { get; private set; }
+    public bool Overwrite { get; private set; }
 
     private readonly List<PersonChoice> _people;
     private readonly bool _editing;
 
     // editing: the person is fixed and the date/time start from the scan being corrected.
-    public ManualEntryWindow(IEnumerable<PersonChoice> people, uint? enroll, DateTime? date, bool editing = false, string? note = null)
+    // canOverwrite: offers a checkbox to change the time directly instead of the audited void-and-replace.
+    public ManualEntryWindow(IEnumerable<PersonChoice> people, uint? enroll, DateTime? date, bool editing = false, string? note = null, bool canOverwrite = false)
     {
         InitializeComponent();
         _editing = editing;
@@ -40,6 +42,7 @@ public partial class ManualEntryWindow : Window
             OutPanel.Visibility = Visibility.Collapsed;
             OutGap.Width = new GridLength(0);
             OutCol.Width = new GridLength(0);
+            if (canOverwrite) OverwriteBox.Visibility = Visibility.Visible;
         }
         Loaded += (_, _) => (PersonBox.SelectedItem is null ? PersonBox : (UIElement)TimeBox).Focus();
     }
@@ -103,6 +106,7 @@ public partial class ManualEntryWindow : Window
         LogIn = login;
         LogOff = logoff;
         Note = note;
+        Overwrite = OverwriteBox.Visibility == Visibility.Visible && OverwriteBox.IsChecked == true;
         DialogResult = true;
     }
 }

@@ -31,6 +31,9 @@
         <TextBlock Text="Reason" Style="{StaticResource Label}" Margin="0,14,0,4"/>
         <TextBox x:Name="NoteBox" Height="64" TextWrapping="Wrap" AcceptsReturn="True" VerticalContentAlignment="Top"/>
 
+        <CheckBox x:Name="OverwriteBox" Content="Overwrite in place: change the time directly, with no void/replace entry in the audit list."
+                  Visibility="Collapsed" Margin="0,12,0,0"/>
+
         <TextBlock x:Name="ErrorText" Foreground="{StaticResource Bad}" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">

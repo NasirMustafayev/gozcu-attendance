@@ -246,6 +246,29 @@ public sealed partial class AttendanceStore
         return cmd.ExecuteNonQuery() > 0;
     }
 
+    // Fills a missing day with manual in/out scans at the shift's own start and end time, so the day counts
+    // as a full day worked instead of absent. Returns false if entries for that day already exist.
+    public bool MarkFull(uint enroll, DateTime date, ShiftDef shift, string by)
+    {
+        var inAdded = AddManual(enroll, date.Date + shift.Start, $"Marked full day by {by}");
+        var outAdded = AddManual(enroll, date.Date + shift.End, $"Marked full day by {by}");
+        return inAdded || outAdded;
+    }
+
+    // Admin-only: overwrites a scan's time in place, device scan or manual, with no void/replace trail.
+    // Still fully logged by the caller; this just skips the audited void-and-replace CorrectScan uses.
+    public bool OverwriteScan(long id, DateTime newWhen, string note, string by)
+    {
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE attendance_log SET timestamp = $t, note = $n, edited_by = $u WHERE id = $id;";
+        cmd.Parameters.AddWithValue("$t", newWhen.ToString(Fmt, CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$n", note);
+        cmd.Parameters.AddWithValue("$u", by);
+        cmd.Parameters.AddWithValue("$id", id);
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
     // Changes the time of a scan. A manual entry is edited in place; a device scan is never altered:
     // it is voided and a manual entry at the corrected time replaces it, so both stay in the audit trail.
     public bool CorrectScan(long id, DateTime newWhen, string note)

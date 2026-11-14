@@ -35,19 +35,25 @@
             <h2>@T("Web users")</h2>
             <div class="muted" style="margin:-6px 0 12px">@T("Administrators manage users; editors change attendance, people and schedules; viewers only look.")</div>
             <table>
-                <thead><tr><th>@T("Username")</th><th>@T("Name")</th><th>@T("Role")</th><th>@T("New password")</th><th></th></tr></thead>
+                <thead><tr><th>@T("Username")</th><th>@T("Name")</th><th>@T("Role")</th><th>@T("Pages")</th><th>@T("New password")</th><th></th></tr></thead>
                 <tbody>
                     @foreach (var u in Store.GetWebUsers())
                     {
+                        var userPages = u.Pages.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
                         <tr>
                             <td>@u.Username</td>
-                            <td colspan="4">
-                                <div class="row" style="gap:6px">
-                                    <form method="post" asp-page-handler="SaveUser" class="row" style="gap:6px">
+                            <td colspan="5">
+                                <div class="row" style="gap:6px;flex-wrap:wrap">
+                                    <form method="post" asp-page-handler="SaveUser" class="row" style="gap:6px;flex-wrap:wrap">
                                         <input type="hidden" name="username" value="@u.Username">
                                         <input type="hidden" name="language" value="@u.Language">
                                         <input type="text" name="displayName" value="@u.DisplayName" style="width:170px">
                                         <select name="role">@foreach (var r in roles) { <option value="@r" selected="@(u.Role == r)">@T(r)</option> }</select>
+                                        <span class="muted" title="@T("Every page for the role")">@T("Pages"):</span>
+                                        @foreach (var p in WebApp.Pages)
+                                        {
+                                            <label class="check" style="margin-right:8px"><input type="checkbox" name="pages" value="@p.Key" checked="@userPages.Contains(p.Key)"> @T(p.Label)</label>
+                                        }
                                         <input type="password" name="password" placeholder="@T("Leave the password empty to keep it.")" autocomplete="new-password" style="width:230px">
                                         <button class="btn small">@T("Save")</button>
                                     </form>
@@ -63,8 +69,9 @@
                     }
                 </tbody>
             </table>
+            <div class="muted" style="margin:8px 0">@T("Leave every page unchecked to allow all pages for the role; check only some pages to restrict the user to those.")</div>
             <h2 style="margin-top:18px">@T("Add user")</h2>
-            <form method="post" asp-page-handler="SaveUser" class="row">
+            <form method="post" asp-page-handler="SaveUser" class="row" style="flex-wrap:wrap">
                 <input type="hidden" name="isNew" value="1">
                 <label class="f">@T("Username")<input type="text" name="username" required autocomplete="off"></label>
                 <label class="f">@T("Name")<input type="text" name="displayName" required></label>
@@ -106,13 +113,13 @@
         if (Store.CheckWebLogin(Who, current ?? "") is not { } me) { FlashError = T("The current password is wrong."); return RedirectToPage(); }
         if ((password ?? "").Length < 8) { FlashError = T("Use at least 8 characters."); return RedirectToPage(); }
         if (password != password2) { FlashError = T("The passwords do not match."); return RedirectToPage(); }
-        Store.SaveWebUser(me.Username, me.DisplayName, me.Role, me.Language, password);
+        Store.SaveWebUser(me.Username, me.DisplayName, me.Role, me.Language, password, me.Pages);
         Log("Info", "Web", $"{me.Username} changed their web password.");
         Flash = T("Password changed.");
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostSaveUserAsync(string? username, string? displayName, string? role, string? language, string? password, string? isNew)
+    public async Task<IActionResult> OnPostSaveUserAsync(string? username, string? displayName, string? role, string? language, string? password, string? isNew, List<string>? pages)
     {
         if (!IsAdminUser) return Denied();
         username = (username ?? "").Trim();
@@ -127,9 +134,10 @@
         if (exists && role != AttendanceStore.RoleAdmin && Store.GetWebUser(username)!.Role == AttendanceStore.RoleAdmin
             && Store.GetWebUsers().Count(u => u.Role == AttendanceStore.RoleAdmin) == 1)
             role = AttendanceStore.RoleAdmin;
+        var pageList = string.Join(',', (pages ?? new()).Where(k => WebApp.Pages.Any(p => p.Key == k)));
 
-        Store.SaveWebUser(username, displayName, role, language == "az" ? "az" : "en", pw);
-        Log("Info", "Web", $"Web user “{username}” saved (role {role}{(pw is null ? "" : ", password set")}).");
+        Store.SaveWebUser(username, displayName, role, language == "az" ? "az" : "en", pw, pageList);
+        Log("Info", "Web", $"Web user “{username}” saved (role {role}{(pw is null ? "" : ", password set")}{(pageList.Length > 0 ? $", pages: {pageList}" : "")}).");
         if (string.Equals(username, Who, StringComparison.OrdinalIgnoreCase)) await Reissue(Who);
         Flash = T("User saved.");
         return RedirectToPage();

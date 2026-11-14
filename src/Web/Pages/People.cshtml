@@ -75,12 +75,13 @@
                                     <input type="hidden" name="id" value="@p.Enroll"><input type="hidden" name="active" value="@(p.Active ? "0" : "1")">
                                     <button class="btn small @(p.Active ? "danger" : "")">@(p.Active ? T("Mark as former") : T("Restore"))</button>
                                 </form>
+                                <a class="btn small" href="/Profile?person=@p.Enroll">@T("Profile")</a>
                                 <a class="btn small" href="/Reports?kind=timesheet&person=@p.Enroll">@T("Timesheet")</a>
                             </td>
                         }
                         else
                         {
-                            <td><a href="/Reports?kind=timesheet&person=@p.Enroll">@p.Name</a></td>
+                            <td><a href="/Profile?person=@p.Enroll">@p.Name</a></td>
                             <td>@ctx.DeptName(p.Enroll)</td>
                         }
                     </tr>

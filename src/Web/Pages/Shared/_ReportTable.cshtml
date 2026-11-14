@@ -2,8 +2,12 @@
 @{
     // Shows a report table with a filter box, Excel/CSV download and print, like the desktop details window.
     var idCol = Model.Headers.IndexOf("ID");
+    var nameCol = Model.Headers.IndexOf("Name");
     var query = Context.Request.QueryString.Value ?? "";
     var sep = query.Length > 0 ? "&" : "?";
+    var canEdit = User.IsInRole(AttendanceStore.RoleAdmin) || User.IsInRole(AttendanceStore.RoleEditor);
+    var canMarkFull = canEdit && Model.MarkFullKeys.Any(k => k is not null);
+    var canEditDay = canEdit && Model.EditKeys.Any(k => k is not null);
 }
 <div class="row no-print" style="margin-bottom:12px">
     <label class="f">@WebApp.T("Filter")<input type="search" data-filter="#report-table" style="width:220px"></label>
@@ -15,12 +19,50 @@
 <div class="card flush">
     <div class="table-wrap">
         <table id="report-table">
-            <thead><tr>@foreach (var h in Model.Headers) { <th>@h</th> }</tr></thead>
+            <thead><tr>@foreach (var h in Model.Headers) { <th>@h</th> }@if (canMarkFull || canEditDay) { <th class="no-print"></th> }</tr></thead>
             <tbody>
-                @foreach (var r in Model.Rows)
+                @for (var i = 0; i < Model.Rows.Count; i++)
                 {
+                    var r = Model.Rows[i];
                     var link = idCol >= 0 && idCol < r.Length && uint.TryParse(r[idCol], out var id) ? $"/Reports?kind=timesheet&person={id}" : null;
-                    <tr data-href="@link">@foreach (var c in r) { <td>@c</td> }</tr>
+                    var missing = Model.KindOf(i) == ReportRowKind.Missing;
+                    var markKey = Model.MarkFullKeyOf(i);
+                    var editKey = Model.EditKeyOf(i);
+                    <tr data-href="@link" class="@(missing ? "row-missing" : "")">
+                        @for (var c = 0; c < r.Length; c++)
+                        {
+                            if (c == nameCol && idCol >= 0 && idCol < r.Length && uint.TryParse(r[idCol], out var pid) && r[c].Length > 0)
+                            {
+                                <td><a href="/Profile?person=@pid" onclick="event.stopPropagation()">@r[c]</a></td>
+                            }
+                            else
+                            {
+                                <td>@r[c]</td>
+                            }
+                        }
+                        @if (canMarkFull || canEditDay)
+                        {
+                            <td class="no-print">
+                                @if (markKey is not null)
+                                {
+                                    <form method="post" asp-page-handler="MarkFull" onclick="event.stopPropagation()">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="key" value="@markKey">
+                                        <input type="hidden" name="kind" value="@Context.Request.Query["kind"]">
+                                        <input type="hidden" name="month" value="@Context.Request.Query["month"]">
+                                        <input type="hidden" name="person" value="@Context.Request.Query["person"]">
+                                        <input type="hidden" name="from" value="@Context.Request.Query["from"]">
+                                        <input type="hidden" name="to" value="@Context.Request.Query["to"]">
+                                        <button class="btn small" type="submit">@WebApp.T("Mark full")</button>
+                                    </form>
+                                }
+                                @if (editKey is not null && editKey.Split('\t') is [var ek, var ed])
+                                {
+                                    <a class="btn small" href="/Attendance?view=scans&from=@ed&to=@ed&q=@ek" onclick="event.stopPropagation()">@WebApp.T("Edit")</a>
+                                }
+                            </td>
+                        }
+                    </tr>
                 }
             </tbody>
         </table>

@@ -1,0 +1,60 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = P is null ? T("Person") : Loc.F("{0} · {1}", P.Name, P.Department);
+    ViewData["Nav"] = "/People";
+    var months = Enumerable.Range(0, 12).Select(i => new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-i)).ToList();
+}
+@if (P is null)
+{
+    <h1>@T("Person not found.")</h1>
+    <a class="btn" href="/People">@T("Back")</a>
+}
+else
+{
+    <div class="row"><h1>@P.Name</h1><span class="spacer"></span><a class="btn no-print" href="/People">@T("Back to People")</a></div>
+    <div class="sub">@Loc.F("ID {0}", P.Enroll) · @(P.Department.Length > 0 ? P.Department : T("No department")) · @Loc.Dates(P.Month.ToString("MMMM yyyy", CultureInfo.InvariantCulture))</div>
+
+    <form method="get" class="row no-print" style="margin:10px 0 14px">
+        <input type="hidden" name="person" value="@P.Enroll">
+        <label class="f">@T("Month")
+            <select name="month" data-autosubmit>@foreach (var m in months) { <option value="@m.ToString("yyyy-MM")" selected="@(m == P.Month)">@Loc.Dates(m.ToString("MMMM yyyy", CultureInfo.InvariantCulture))</option> }</select>
+        </label>
+        <a class="btn" href="/Reports?kind=timesheet&person=@P.Enroll&month=@P.Month.ToString("yyyy-MM")">@T("Full timesheet")</a>
+    </form>
+
+    <div class="grid cards">
+        <a class="card stat" href="/Reports?kind=absent&from=@WebApp.Iso(P.Month)&to=@WebApp.Iso(P.Month.AddMonths(1).AddDays(-1))">
+            <div class="label">@T("ABSENT")</div><div class="value @(P.Absences > 0 ? "c-bad" : "")">@P.Absences</div><div class="hint">@T("day(s) this month")</div>
+        </a>
+        <div class="card stat">
+            <div class="label">@T("PRESENT")</div><div class="value">@P.DaysPresent</div><div class="hint">@T("day(s) with a scan")</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("LATE")</div><div class="value @(P.LateMinutesTotal > 0 ? "c-warn" : "")">@WebApp.Hm(TimeSpan.FromMinutes(P.LateMinutesTotal))</div>
+            <div class="hint">@(P.LateDays > 0 ? Loc.F("{0} time(s) · avg {1} min", P.LateDays, P.AverageLateMinutes) : T("time(s)"))</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("LEFT EARLY")</div><div class="value @(P.EarlyMinutesTotal > 0 ? "c-violet" : "")">@WebApp.Hm(TimeSpan.FromMinutes(P.EarlyMinutesTotal))</div>
+            <div class="hint">@(P.EarlyDays > 0 ? Loc.F("{0} time(s) · avg {1} min", P.EarlyDays, P.AverageEarlyMinutes) : T("time(s)"))</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("WORKED")</div><div class="value">@WebApp.Hm(P.Worked)</div><div class="hint">@T("this month")</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("OVERTIME")</div><div class="value">@WebApp.Min(P.OvertimeMinutes)</div><div class="hint">@T("this month")</div>
+        </div>
+    </div>
+}
+
+@functions {
+    public PersonProfile? P { get; set; }
+
+    public void OnGet(uint person, string? month)
+    {
+        var m = DateTime.TryParseExact((month ?? "") + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+            ? parsed : new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        if (!Ctx.Allows(person)) return;
+        P = Reports.Profile(Ctx, person, m);
+    }
+}

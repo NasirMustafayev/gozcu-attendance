@@ -5,13 +5,36 @@ using GozcuStandalone.Storage;
 
 namespace GozcuStandalone.Reporting;
 
+// How a row should stand out: a missing day is highlighted red so it is not mistaken for a normal one.
+public enum ReportRowKind { Normal, Missing }
+
 public sealed class ReportTable
 {
     public string Title { get; init; } = "";
     public string Subtitle { get; init; } = "";
     public List<string> Headers { get; init; } = new();
     public List<string[]> Rows { get; init; } = new();
+    // Parallel to Rows; defaults to Normal so a row added without a kind is never flagged.
+    public List<ReportRowKind> RowKinds { get; init; } = new();
+    // Parallel to Rows: "enroll\tdate" for a missing day that can be marked full, null otherwise.
+    public List<string?> MarkFullKeys { get; init; } = new();
+    // Parallel to Rows: "enroll\tdate" for a day whose scans can be opened for editing, null otherwise.
+    public List<string?> EditKeys { get; init; } = new();
     public string Footer { get; set; } = "";
+
+    public void AddRow(string[] cells, ReportRowKind kind = ReportRowKind.Normal, (uint Enroll, DateTime Date)? markFull = null, (uint Enroll, DateTime Date)? editDay = null)
+    {
+        Rows.Add(cells);
+        RowKinds.Add(kind);
+        MarkFullKeys.Add(markFull is { } m ? $"{m.Enroll}\t{m.Date:yyyy-MM-dd}" : null);
+        EditKeys.Add(editDay is { } e ? $"{e.Enroll}\t{e.Date:yyyy-MM-dd}" : null);
+    }
+
+    public ReportRowKind KindOf(int rowIndex) => rowIndex >= 0 && rowIndex < RowKinds.Count ? RowKinds[rowIndex] : ReportRowKind.Normal;
+
+    public string? MarkFullKeyOf(int rowIndex) => rowIndex >= 0 && rowIndex < MarkFullKeys.Count ? MarkFullKeys[rowIndex] : null;
+
+    public string? EditKeyOf(int rowIndex) => rowIndex >= 0 && rowIndex < EditKeys.Count ? EditKeys[rowIndex] : null;
 
     public void WriteCsv(string path)
     {
@@ -79,6 +102,15 @@ public sealed class ReportContext
 }
 
 public sealed record AbsenceRow(DateTime Date, uint Enroll, string Name, string Shift);
+
+// Quick facts about one person for one month: how reliably they show up, and how.
+public sealed record PersonProfile(
+    uint Enroll, string Name, string Department, DateTime Month,
+    int DaysPresent, int Absences, int LateDays, int LateMinutesTotal, int EarlyDays, int EarlyMinutesTotal, int OvertimeMinutes, TimeSpan Worked)
+{
+    public int AverageLateMinutes => LateDays > 0 ? (int)Math.Round((double)LateMinutesTotal / LateDays) : 0;
+    public int AverageEarlyMinutes => EarlyDays > 0 ? (int)Math.Round((double)EarlyMinutesTotal / EarlyDays) : 0;
+}
 
 public static class Reports
 {
@@ -189,27 +221,55 @@ public static class Reports
                 var notes = new List<string>();
                 if (row.LastOut is null) notes.Add(Loc.T("only one scan"));
                 if (manualDays.Contains(d)) notes.Add(Loc.T("manual entry"));
-                table.Rows.Add(new[]
+                table.AddRow(new[]
                 {
                     Date(d), Day(d), row.Shift, row.FirstIn.ToString("HH:mm"), row.LastOut?.ToString("HH:mm") ?? "—",
                     row.Worked == TimeSpan.Zero ? "—" : MonthlySummary.Hours(row.Worked),
                     Mins(row.LateMinutes), Mins(row.EarlyLeaveMinutes), Mins(row.OvertimeMinutes),
                     row.Punches.ToString(), string.Join(", ", notes),
-                });
+                }, editDay: (enroll, d));
                 continue;
             }
 
             string note;
+            var missing = false;
             if (ctx.Holidays.TryGetValue(d, out var holiday)) note = Loc.F("Holiday: {0}", holiday);
             else if (ctx.Leaves.OnLeave(d, enroll) is { } leave) note = Loc.F("Leave: {0}", leave);
-            else if (ctx.Shifts.IsWorkday(d, enroll, out _)) { note = Loc.T("Absent"); absent++; }
+            else if (ctx.Shifts.IsWorkday(d, enroll, out _)) { note = Loc.T("Absent"); absent++; missing = d < DateTime.Today; }
             else note = Loc.T("Day off");
 
-            table.Rows.Add(new[] { Date(d), Day(d), shift?.Name ?? "", "", "", "", "", "", "", "0", note });
+            table.AddRow(new[] { Date(d), Day(d), shift?.Name ?? "", "", "", "", "", "", "", "0", note },
+                missing ? ReportRowKind.Missing : ReportRowKind.Normal, missing ? (enroll, d) : null);
         }
 
         table.Footer = Loc.F("Present {0} day(s) · absent {1} · worked {2} · late {3} min · early leave {4} min · overtime {5}", present, absent, MonthlySummary.Hours(worked), late, early, Mins(over));
         return table;
+    }
+
+    // Quick facts about one person for a month, for the profile card shown from People, Attendance and Reports.
+    public static PersonProfile Profile(ReportContext ctx, uint enroll, DateTime month)
+    {
+        var first = new DateTime(month.Year, month.Month, 1);
+        var lastDay = first.AddMonths(1).AddDays(-1);
+        var today = DateTime.Today;
+        var toDate = lastDay > today ? today : lastDay;
+
+        var name = ctx.NameOf(enroll);
+        var dept = ctx.DeptName(enroll);
+        var scans = ctx.Store.GetRange(first, first.AddMonths(1)).Where(r => r.EnrollNumber == enroll).ToList();
+        var monthRow = MonthlySummary.Build(ctx.Daily(scans)).FirstOrDefault(r => r.Enroll == enroll);
+        var absencesThisMonth = toDate >= first ? Absences(ctx, first, toDate).Count(a => a.Enroll == enroll) : 0;
+
+        return new PersonProfile(
+            enroll, name, dept, first,
+            DaysPresent: monthRow?.DaysPresent ?? 0,
+            Absences: absencesThisMonth,
+            LateDays: monthRow?.LateDays ?? 0,
+            LateMinutesTotal: monthRow?.LateMinutes ?? 0,
+            EarlyDays: monthRow?.EarlyDays ?? 0,
+            EarlyMinutesTotal: monthRow?.EarlyMinutes ?? 0,
+            OvertimeMinutes: monthRow?.OvertimeMinutes ?? 0,
+            Worked: monthRow?.Worked ?? TimeSpan.Zero);
     }
 
     public static ReportTable Absent(ReportContext ctx, DateTime from, DateTime to)
@@ -221,7 +281,12 @@ public static class Reports
             Subtitle = Loc.F("{0} to {1}", Date(from), Date(to)) + Scope(ctx),
             Headers = { "Date", "Day", "ID", "Name", "Department", "Shift" },
         };
-        foreach (var a in list) table.Rows.Add(new[] { Date(a.Date), Day(a.Date), a.Enroll.ToString(), a.Name, ctx.DeptName(a.Enroll), a.Shift });
+        foreach (var a in list)
+        {
+            var canMark = a.Date < DateTime.Today;
+            table.AddRow(new[] { Date(a.Date), Day(a.Date), a.Enroll.ToString(), a.Name, ctx.DeptName(a.Enroll), a.Shift },
+                ReportRowKind.Missing, canMark ? (a.Enroll, a.Date) : null);
+        }
         table.Footer = Loc.F("{0} absence(s) across {1} people. Leave and holidays are not counted.", list.Count, list.Select(a => a.Enroll).Distinct().Count());
         return table;
     }

@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid Margin="34,30,34,30">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <StackPanel Margin="0,0,0,18">
@@ -33,24 +33,81 @@
                     <TextBlock Text="To" Style="{StaticResource Label}" Margin="0,0,0,4"/>
                     <DatePicker x:Name="ToBox" Width="140" SelectedDateChanged="Date_Changed"/>
                 </StackPanel>
+                <Button Content="This week" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Margin="0,0,10,0" Click="ThisWeek_Click"/>
+                <Button Content="This month" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Margin="0,0,14,0" Click="ThisMonth_Click"/>
             </StackPanel>
             <StackPanel Margin="0,0,14,0">
                 <TextBlock Text="Filter" Style="{StaticResource Label}" Margin="0,0,0,4"/>
                 <TextBox x:Name="SearchBox" Width="190" TextChanged="Search_Changed"/>
             </StackPanel>
+            <Button x:Name="MarkFullButton" Content="Mark full day" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Margin="0,0,10,0"
+                    Click="MarkFull_Click" IsEnabled="False"/>
+            <Button x:Name="EditDayButton" Content="Edit this day's scans" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Margin="0,0,10,0"
+                    Click="EditDay_Click" IsEnabled="False"/>
             <Button Content="Export CSV" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Margin="0,0,10,0" Click="Export_Click"/>
             <Button Content="Print / PDF" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Click="Print_Click"/>
         </WrapPanel>
 
-        <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0">
+        <Grid x:Name="ProfileCards" Grid.Row="2" Margin="0,0,0,16" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition/><ColumnDefinition Width="10"/><ColumnDefinition/><ColumnDefinition Width="10"/><ColumnDefinition/>
+                <ColumnDefinition Width="10"/><ColumnDefinition/><ColumnDefinition Width="10"/><ColumnDefinition/><ColumnDefinition Width="10"/><ColumnDefinition/>
+            </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource Card}" Padding="14,12">
+                <StackPanel>
+                    <TextBlock Text="ABSENT" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="PcAbsentValue" Text="0" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Bad}" Margin="0,5,0,0"/>
+                    <TextBlock Text="day(s) this month" Style="{StaticResource Label}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource Card}" Padding="14,12">
+                <StackPanel>
+                    <TextBlock Text="PRESENT" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="PcPresentValue" Text="0" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,5,0,0"/>
+                    <TextBlock Text="day(s) with a scan" Style="{StaticResource Label}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="4" Style="{StaticResource Card}" Padding="14,12">
+                <StackPanel>
+                    <TextBlock Text="LATE" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="PcLateValue" Text="0m" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Warn}" Margin="0,5,0,0"/>
+                    <TextBlock x:Name="PcLateHint" Text="time(s)" Style="{StaticResource Label}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="6" Style="{StaticResource Card}" Padding="14,12">
+                <StackPanel>
+                    <TextBlock Text="LEFT EARLY" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="PcEarlyValue" Text="0m" FontSize="22" FontWeight="Bold" Foreground="#7C3AED" Margin="0,5,0,0"/>
+                    <TextBlock x:Name="PcEarlyHint" Text="time(s)" Style="{StaticResource Label}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="8" Style="{StaticResource Card}" Padding="14,12">
+                <StackPanel>
+                    <TextBlock Text="WORKED" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="PcWorkedValue" Text="—" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,5,0,0"/>
+                    <TextBlock Text="this month" Style="{StaticResource Label}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="10" Style="{StaticResource Card}" Padding="14,12">
+                <StackPanel>
+                    <TextBlock Text="OVERTIME" Style="{StaticResource Label}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="PcOvertimeValue" Text="—" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,5,0,0"/>
+                    <TextBlock Text="this month" Style="{StaticResource Label}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="3" Style="{StaticResource Card}" Padding="0">
             <Grid>
                 <DataGrid x:Name="ReportGrid" Style="{StaticResource Grid}" IsReadOnly="True" AutoGenerateColumns="True"
-                          AutoGeneratingColumn="ReportGrid_AutoGeneratingColumn"/>
+                          AutoGeneratingColumn="ReportGrid_AutoGeneratingColumn" LoadingRow="ReportGrid_LoadingRow"
+                          SelectionChanged="ReportGrid_SelectionChanged" MouseDoubleClick="ReportGrid_DoubleClick"
+                          ToolTip="Double-click a row to see that person's timesheet"/>
                 <TextBlock x:Name="EmptyText" Text="Nothing to report for these settings." Style="{StaticResource Label}" FontSize="14"
                            HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
             </Grid>
         </Border>
 
-        <TextBlock Grid.Row="3" x:Name="FooterText" Style="{StaticResource Label}" FontSize="12" TextWrapping="Wrap" Margin="2,12,0,0"/>
+        <TextBlock Grid.Row="4" x:Name="FooterText" Style="{StaticResource Label}" FontSize="12" TextWrapping="Wrap" Margin="2,12,0,0"/>
     </Grid>
 </UserControl>

@@ -69,6 +69,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #BFDBFE; border-c
 .btn.primary:hover { background: #1D4ED8; }
 .btn.danger { color: var(--bad); }
 .btn.small { padding: 4px 10px; min-height: 30px; font-size: 12px; }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--accent); padding: 9px 8px; }
+.btn.ghost:hover { background: #F8FAFC; text-decoration: underline; }
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink); }
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
 .tabs a { padding: 8px 16px; border-radius: 9px; font-weight: 600; font-size: 13px; color: var(--muted); }
@@ -88,6 +90,8 @@ td.wrap { white-space: normal; min-width: 220px; }
 tr:hover td { background: #F8FAFC; }
 tr.voided td { color: #94A3B8; text-decoration: line-through; }
 tr.voided td.keep { text-decoration: none; }
+tr.row-missing td { background: #FEF2F2; color: #991B1B; }
+tr.row-missing:hover td { background: #FEE2E2; }
 td.num, th.num { text-align: right; }
 .empty { padding: 40px; text-align: center; color: var(--muted); }
 .pill { display: inline-block; border-radius: 10px; padding: 2px 10px; font-size: 11px; font-weight: 600; background: #F1F5F9; color: #475569; }

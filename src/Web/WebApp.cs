@@ -13,6 +13,23 @@ public static class WebApp
     public const string IsAdmin = "IsAdmin";
     public const string LanguageClaim = "lang";
     public const string DisplayNameClaim = "display";
+    public const string PagesClaim = "pages";
+
+    // Every page a role can be restricted to, with the folder its route lives under (matches _Layout's nav).
+    // Settings and Denied are never restricted: everyone needs their own account page, and Denied must always show.
+    public static readonly (string Key, string Folder, string Label)[] Pages =
+    {
+        ("dashboard", "/Index", "Dashboard"), ("attendance", "/Attendance", "Attendance"), ("schedule", "/Schedule", "Schedule"),
+        ("reports", "/Reports", "Reports"), ("people", "/People", "People"), ("log", "/Log", "Activity log"),
+    };
+
+    // Null means "every page the role allows" (no restriction set). Settings/Entry/Denied/Setup/Login are always reachable.
+    public static HashSet<string>? AllowedFolders(WebUser u)
+    {
+        if (string.IsNullOrWhiteSpace(u.Pages)) return null;
+        var keys = u.Pages.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
+        return Pages.Where(p => keys.Contains(p.Key)).Select(p => p.Folder).ToHashSet();
+    }
 
     // Translation for text that only the web app shows; everything else comes from the shared table.
     public static string T(string text) =>
@@ -34,6 +51,7 @@ public static class WebApp
         new Claim(DisplayNameClaim, u.DisplayName),
         new Claim(ClaimTypes.Role, u.Role),
         new Claim(LanguageClaim, u.Language),
+        new Claim(PagesClaim, u.Pages),
     }, "cookie"));
 
     private static readonly Dictionary<string, string> WebAz = new()
@@ -67,6 +85,21 @@ public static class WebApp
         ["The desktop app did not answer in time. Check that it is running."] = "Masaüstü tətbiq vaxtında cavab vermədi. İşlədiyini yoxlayın.",
         ["Another sync is already running."] = "Başqa sinxronizasiya artıq gedir.",
         ["The desktop app is not running, so the web app synced with the device directly."] = "Masaüstü tətbiq işləmir, ona görə veb tətbiq cihazla birbaşa sinxronlaşdı.", ["Edit"] = "Redaktə", ["ON DEVICE"] = "CİHAZDA", ["from the desktop app"] = "masaüstü tətbiqdən",
+        ["Mark full"] = "Tam gün say", ["This week"] = "Bu həftə", ["This month"] = "Bu ay",
+        ["That person has no shift on that day."] = "Bu şəxsin o gün növbəsi yoxdur.", ["That day already has entries."] = "O gündə artıq qeydlər var.",
+        ["Marked {0:yyyy-MM-dd} as a full day for {1}."] = "{1} üçün {0:yyyy-MM-dd} tam iş günü kimi qeyd edildi.",
+        ["Pages"] = "Səhifələr", ["Every page for the role"] = "Rol üçün bütün səhifələr",
+        ["Leave every page unchecked to allow all pages for the role; check only some pages to restrict the user to those."] = "Rol üçün bütün səhifələrə icazə vermək üçün heç birini işarələməyin; istifadəçini yalnız bəzi səhifələrlə məhdudlaşdırmaq üçün onları işarələyin.",
+        ["Who"] = "Kim", ["Chosen people"] = "Seçilmiş işçilər", ["Whole department"] = "Bütün şöbə", ["Everyone"] = "Hamı",
+        ["People (for \"Chosen people\")"] = "İşçilər (\"Seçilmiş işçilər\" üçün)",
+        ["Choose at least one person, a department, or everyone."] = "Ən azı bir işçi, bir şöbə və ya hamını seçin.",
+        ["{0} recorded for {1} day(s), {2} people."] = "{0} {1} gün üçün {2} nəfərə qeyd edildi.",
+        ["Overwrite in place (admin): change the time directly, with no void/replace entry in the audit list."] = "Birbaşa yerində dəyiş (admin): vaxtı birbaşa dəyişdirir, jurnalda ləğv/əvəz qeydi olmadan.",
+        ["Edit this day's scans"] = "Bu günün skanlarını redaktə et",
+        ["Back to People"] = "İşçilərə qayıt", ["No department"] = "Şöbə yoxdur", ["Full timesheet"] = "Tam tabel",
+        ["ABSENT"] = "YOXLUQ", ["day(s) this month"] = "gün bu ay", ["day(s) with a scan"] = "gün skanla",
+        ["time(s)"] = "dəfə", ["time(s) · avg {0} min"] = "dəfə · orta {0} dəq", ["{0} time(s) · avg {1} min"] = "{0} dəfə · orta {1} dəq", ["OVERTIME"] = "ƏLAVƏ VAXT",
+        ["ID {0}"] = "ID {0}", ["Profile"] = "Profil",
     };
 }
 

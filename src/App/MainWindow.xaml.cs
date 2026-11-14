@@ -139,11 +139,27 @@ public partial class MainWindow : Window
 
         var win = new DetailsWindow(Reports.Today(AppServices.Context(), kind)) { Owner = this };
         win.ShowDialog();
-        if (win.OpenPersonId is { } id)
-        {
-            NavReports.IsChecked = true;
-            PageReports.ShowTimesheet(id);
-        }
+        if (win.OpenPersonId is { } id) ShowTimesheet(id);
+    }
+
+    // Jumps to the Attendance tab's scan list for one person on one day, so a Reports row can be edited directly.
+    public void ShowScansFor(uint enroll, DateTime date)
+    {
+        NavAttendance.IsChecked = true;
+        _ready = false;
+        FromPicker.SelectedDate = date.Date;
+        ToPicker.SelectedDate = date.Date;
+        SearchBox.Text = enroll.ToString();
+        ViewScans.IsChecked = true;
+        _ready = true;
+        LoadAttendance();
+    }
+
+    // Jumps to the Reports tab's Person timesheet, the same drill-down used from the dashboard's "today" cards.
+    public void ShowTimesheet(uint enroll)
+    {
+        NavReports.IsChecked = true;
+        PageReports.ShowTimesheet(enroll);
     }
 
     private static string AppVersion => typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
@@ -491,6 +507,18 @@ public partial class MainWindow : Window
 
     private void Filter_TextChanged(object sender, TextChangedEventArgs e) { if (_ready) LoadAttendance(); }
 
+    private void AttendanceThisWeek_Click(object sender, RoutedEventArgs e)
+    {
+        FromPicker.SelectedDate = DateTime.Today.AddDays(-(((int)DateTime.Today.DayOfWeek + 6) % 7));
+        ToPicker.SelectedDate = DateTime.Today;
+    }
+
+    private void AttendanceThisMonth_Click(object sender, RoutedEventArgs e)
+    {
+        FromPicker.SelectedDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        ToPicker.SelectedDate = DateTime.Today;
+    }
+
     private void LoadAttendance()
     {
         if (!_ready) return;
@@ -586,6 +614,13 @@ public partial class MainWindow : Window
     private void DayGrid_DoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (DayGrid.SelectedItem is not DayRow d) return;
+        var cell = (e.OriginalSource as DependencyObject)?.FindAncestor<DataGridCell>();
+        if (cell?.Column?.Header is "ID" or "NAME" && uint.TryParse(d.Id, out var enroll))
+        {
+            new PersonProfileWindow(enroll) { Owner = this }.ShowDialog();
+            return;
+        }
+
         _ready = false;
         FromPicker.SelectedDate = d.DateValue;
         ToPicker.SelectedDate = d.DateValue;
@@ -608,13 +643,24 @@ public partial class MainWindow : Window
         if (!uint.TryParse(s.Id, out var id)) return;
 
         var people = _store.GetPeople().Select(p => new PersonChoice(p.Enroll, $"{p.Name} · {p.Enroll}")).ToList();
-        var win = new ManualEntryWindow(people, id, s.Time, editing: true, note: s.IsManual ? s.Note : "") { Owner = this };
+        var win = new ManualEntryWindow(people, id, s.Time, editing: true, note: s.IsManual ? s.Note : "", canOverwrite: true) { Owner = this };
         if (win.ShowDialog() != true) return;
         if (win.When == s.Time && (!s.IsManual || win.Note == s.Note)) { ShowToast("Nothing changed."); return; }
 
-        if (_store.CorrectScan(s.Key, win.When, win.Note))
+        bool ok;
+        if (win.Overwrite)
         {
-            AppServices.Log("Warn", "Manual", $"Scan edited: {s.Name} (ID {s.Id}) {s.Time:yyyy-MM-dd HH:mm:ss} → {win.When:yyyy-MM-dd HH:mm}. Reason: {win.Note}");
+            ok = _store.OverwriteScan(s.Key, win.When, win.Note, Environment.UserName);
+            if (ok) AppServices.Log("Warn", "Manual", $"Scan overwritten in place (admin): {s.Name} (ID {s.Id}) {s.Time:yyyy-MM-dd HH:mm:ss} → {win.When:yyyy-MM-dd HH:mm}. Reason: {win.Note}");
+        }
+        else
+        {
+            ok = _store.CorrectScan(s.Key, win.When, win.Note);
+            if (ok) AppServices.Log("Warn", "Manual", $"Scan edited: {s.Name} (ID {s.Id}) {s.Time:yyyy-MM-dd HH:mm:ss} → {win.When:yyyy-MM-dd HH:mm}. Reason: {win.Note}");
+        }
+
+        if (ok)
+        {
             AppServices.RaiseDataChanged();
             ShowToast(Loc.F("Scan changed to {0:HH:mm}.", win.When));
         }
@@ -754,6 +800,15 @@ public partial class MainWindow : Window
             AppServices.Log("Info", "People", $"Renamed ID {p.Enroll} to “{tb.Text.Trim()}”.");
             AppServices.RaiseDataChanged();
         }
+    }
+
+    // Opens the profile from the read-only ID/Status cells; Name and Department stay double-click-to-edit.
+    private void PeopleGrid_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (PeopleGrid.SelectedItem is not PersonRow person) return;
+        var cell = (e.OriginalSource as DependencyObject)?.FindAncestor<DataGridCell>();
+        if (cell?.Column?.Header is not ("ID" or "STATUS")) return;
+        new PersonProfileWindow(person.Enroll) { Owner = this }.ShowDialog();
     }
 
     private void AddPerson_Click(object sender, RoutedEventArgs e)

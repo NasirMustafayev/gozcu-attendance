@@ -150,9 +150,16 @@ else if (Tab_ == "leave")
     <p class="sub">@T("Record annual leave, sick days and business trips. People on leave are not reported absent, and the calendar marks those days with L.")</p>
     @if (CanEditData)
     {
-        <form method="post" asp-page-handler="AddLeave" class="card row" style="margin-bottom:14px">
-            <label class="f">@T("Person")
-                <select name="enroll" required><option value=""></option>
+        <form method="post" asp-page-handler="AddLeave" class="card row" style="margin-bottom:14px;flex-wrap:wrap">
+            <label class="f">@T("Who")
+                <select name="target">
+                    <option value="people">@T("Chosen people")</option>
+                    @foreach (var d in ctx.Departments.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)) { <option value="dept:@d.Id">@T("Whole department")@(": " + d.Name)</option> }
+                    <option value="all">@T("Everyone")</option>
+                </select>
+            </label>
+            <label class="f" style="min-width:220px">@T("People (for \"Chosen people\")")
+                <select name="enroll" multiple size="4" style="min-width:220px">
                     @foreach (var p in ctx.ActivePeople.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)) { <option value="@p.Enroll">@p.Name · @p.Enroll</option> }
                 </select>
             </label>
@@ -286,18 +293,29 @@ else
         return RedirectToPage(new { tab = "shifts" });
     }
 
-    public IActionResult OnPostAddLeave(uint? enroll, int type, string? from, string? to, string? note)
+    public IActionResult OnPostAddLeave(string? target, uint[]? enroll, int type, string? from, string? to, string? note)
     {
         if (!CanEditData) return Denied();
         var back = RedirectToPage(new { tab = "leave" });
-        if (enroll is null) { FlashError = T("Choose a person first."); return back; }
+        var ctx = Ctx;
+
+        List<uint> people;
+        if (target is { Length: > 5 } t && t.StartsWith("dept:") && int.TryParse(t[5..], out var deptId))
+            people = ctx.ActivePeople.Where(p => ctx.DepartmentOf.TryGetValue(p.Enroll, out var d) && d == deptId).Select(p => p.Enroll).ToList();
+        else if (target == "all")
+            people = ctx.ActivePeople.Select(p => p.Enroll).ToList();
+        else
+            people = (enroll ?? Array.Empty<uint>()).Where(ctx.Allows).ToList();
+
+        if (people.Count == 0) { FlashError = T("Choose at least one person, a department, or everyone."); return back; }
         if (ParseDate(from) is not { } a || ParseDate(to) is not { } b) { FlashError = T("Pick the first and last day."); return back; }
         if (b < a) { FlashError = T("The last day can't be before the first day."); return back; }
-        var label = Loc.T(LeaveTypes.Local.FirstOrDefault(t => t.Type == type).Label ?? "Other");
+
+        var label = Loc.T(LeaveTypes.Local.FirstOrDefault(t2 => t2.Type == type).Label ?? "Other");
         var description = string.IsNullOrWhiteSpace(note) ? label : $"{label} – {note.Trim()}";
-        Store.AddLeave(enroll.Value, a, b, description, type);
-        Log("Info", "Leave", $"Leave added for {Ctx.NameOf(enroll.Value)} (ID {enroll}): {a:yyyy-MM-dd} to {b:yyyy-MM-dd} ({description}).");
-        Flash = Loc.F("{0} recorded for {1} day(s).", label, (b - a).Days + 1);
+        foreach (var id in people) Store.AddLeave(id, a, b, description, type);
+        Log("Info", "Leave", $"Leave added for {people.Count} people ({string.Join(", ", people.Take(10))}{(people.Count > 10 ? "…" : "")}): {a:yyyy-MM-dd} to {b:yyyy-MM-dd} ({description}).");
+        Flash = Loc.F("{0} recorded for {1} day(s), {2} people.", label, (b - a).Days + 1, people.Count);
         return back;
     }
 

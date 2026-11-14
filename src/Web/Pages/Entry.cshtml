@@ -29,6 +29,10 @@
             @if (!Editing) { <label class="f">@T("Log off (HH:mm)")<input type="time" name="logoff" value="@LogOff"></label> }
         </div>
         <label class="f">@T("Reason")<textarea name="note" required>@Note</textarea></label>
+        @if (Editing && IsAdminUser)
+        {
+            <label class="check"><input type="checkbox" name="overwrite" value="1"> @T("Overwrite in place (admin): change the time directly, with no void/replace entry in the audit list.")</label>
+        }
         @if (Error is not null) { <div class="error-text">@Error</div> }
         <div class="row">
             <span class="spacer"></span>
@@ -74,7 +78,7 @@
         return Page();
     }
 
-    public IActionResult OnPost(long? id, uint? enroll, string? date, string? login, string? logoff, string? note, string? back)
+    public IActionResult OnPost(long? id, uint? enroll, string? date, string? login, string? logoff, string? note, string? back, string? overwrite)
     {
         if (!CanEditData) return Denied();
         SetBack(back);
@@ -96,8 +100,16 @@
             var s = Store.GetScan(id!.Value);
             if (s is null) { FlashError = T("Scan not found."); return LocalRedirect(BackUrl); }
             var when = Date + tin!.Value;
-            if (!Store.CorrectScan(s.Id, when, Note)) { Error = T("An entry at that exact time already exists."); return Page(); }
-            Log("Warn", "Manual", $"Scan edited: {name} (ID {s.EnrollNumber}) {s.Timestamp:yyyy-MM-dd HH:mm:ss} → {when:yyyy-MM-dd HH:mm}. Reason: {Note}");
+            if (IsAdminUser && overwrite == "1")
+            {
+                if (!Store.OverwriteScan(s.Id, when, Note, Who)) { Error = T("An entry at that exact time already exists."); return Page(); }
+                Log("Warn", "Manual", $"Scan overwritten in place (admin): {name} (ID {s.EnrollNumber}) {s.Timestamp:yyyy-MM-dd HH:mm:ss} → {when:yyyy-MM-dd HH:mm}. Reason: {Note}");
+            }
+            else
+            {
+                if (!Store.CorrectScan(s.Id, when, Note)) { Error = T("An entry at that exact time already exists."); return Page(); }
+                Log("Warn", "Manual", $"Scan edited: {name} (ID {s.EnrollNumber}) {s.Timestamp:yyyy-MM-dd HH:mm:ss} → {when:yyyy-MM-dd HH:mm}. Reason: {Note}");
+            }
             Flash = Loc.F("Scan changed to {0:HH:mm}.", when);
             return LocalRedirect(BackUrl);
         }

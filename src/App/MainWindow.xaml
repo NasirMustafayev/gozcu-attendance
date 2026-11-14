@@ -233,6 +233,8 @@
                         <TextBlock Text="To" Style="{StaticResource Label}" Margin="0,0,0,4"/>
                         <DatePicker x:Name="ToPicker" Width="140" SelectedDateChanged="Filter_Changed"/>
                     </StackPanel>
+                    <Button Content="This week" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Margin="0,0,10,0" Click="AttendanceThisWeek_Click"/>
+                    <Button Content="This month" Style="{StaticResource GhostButton}" VerticalAlignment="Bottom" Margin="0,0,14,0" Click="AttendanceThisMonth_Click"/>
                     <StackPanel Margin="0,0,14,0">
                         <TextBlock Text="Search name or ID" Style="{StaticResource Label}" Margin="0,0,0,4"/>
                         <TextBox x:Name="SearchBox" Width="200" TextChanged="Filter_TextChanged"/>
@@ -336,7 +338,8 @@
                 </WrapPanel>
 
                 <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0">
-                    <DataGrid x:Name="PeopleGrid" Style="{StaticResource Grid}" CellEditEnding="PeopleGrid_CellEditEnding">
+                    <DataGrid x:Name="PeopleGrid" Style="{StaticResource Grid}" CellEditEnding="PeopleGrid_CellEditEnding" MouseDoubleClick="PeopleGrid_DoubleClick"
+                              ToolTip="Double-click a row to see that person's profile">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="ID" Binding="{Binding Enroll}" Width="90" IsReadOnly="True"/>
                             <DataGridTextColumn Header="STATUS" Binding="{Binding Status}" Width="100" IsReadOnly="True"/>

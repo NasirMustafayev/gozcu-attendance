@@ -271,7 +271,7 @@ public static class Program
                 // web-user list | web-user password <name> <new password> | web-user delete <name>
                 if (args.Length > 3 && args[1] == "password" && store.GetWebUser(args[2]) is { } u)
                 {
-                    store.SaveWebUser(u.Username, u.DisplayName, u.Role, u.Language, args[3]);
+                    store.SaveWebUser(u.Username, u.DisplayName, u.Role, u.Language, args[3], u.Pages);
                     store.Log("Warn", "Web", $"Web password for “{u.Username}” reset (command line).");
                     Console.WriteLine("Password changed.");
                     return 0;

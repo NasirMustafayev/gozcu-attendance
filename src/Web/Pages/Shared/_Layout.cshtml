@@ -13,7 +13,7 @@
     var flash = TempData["flash"] as string;
     var flashError = TempData["flashError"] as string;
 
-    (string Page, string Label, string Icon)[] items =
+    (string Page, string Label, string Icon)[] allItems =
     {
         ("/Index", "Dashboard", "M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"),
         ("/Attendance", "Attendance", "M4 5h16v15H4zM4 9h16M8 3v4M16 3v4"),
@@ -23,6 +23,9 @@
         ("/Log", "Activity log", "M4 6h16M4 12h16M4 18h10"),
         ("/Settings", "Settings", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.8-1.1V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.3z"),
     };
+    // Settings always shows; the rest are hidden when the signed-in user is restricted to a chosen set of pages.
+    var allowedPages = signedIn ? Store.GetWebUser(User.Identity!.Name!) is { } meUser ? WebApp.AllowedFolders(meUser) : null : null;
+    var items = allowedPages is null ? allItems : allItems.Where(it => it.Page == "/Settings" || allowedPages.Contains(it.Page)).ToArray();
 }
 <!doctype html>
 <html lang="@Loc.Language">

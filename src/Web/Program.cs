@@ -74,6 +74,30 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// A user can be restricted to a chosen set of pages; everyone keeps their own account page and admins keep every page.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.User.Identity?.IsAuthenticated == true && !ctx.User.IsInRole(AttendanceStore.RoleAdmin))
+    {
+        var pages = ctx.User.FindFirstValue(WebApp.PagesClaim);
+        if (!string.IsNullOrWhiteSpace(pages))
+        {
+            var allowed = WebApp.Pages.Where(p => pages.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains(p.Key))
+                .Select(p => p.Folder).ToHashSet();
+            // "/" is the dashboard's route, just as the sidebar treats it as "/Index".
+            var path = ctx.Request.Path.Value is "/" or "" ? "/Index" : ctx.Request.Path.Value!;
+            var restricted = WebApp.Pages.Select(p => p.Folder).Any(f => path.StartsWith(f, StringComparison.OrdinalIgnoreCase));
+            if (restricted && !allowed.Any(f => path.StartsWith(f, StringComparison.OrdinalIgnoreCase)))
+            {
+                var target = allowed.FirstOrDefault() is { Length: > 0 } first ? first : "/Settings";
+                ctx.Response.Redirect(target == "/Index" ? "/" : target);
+                return;
+            }
+        }
+    }
+    await next();
+});
+
 app.UseAuthorization();
 app.MapRazorPages();
 

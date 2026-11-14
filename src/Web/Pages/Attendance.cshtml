@@ -28,6 +28,8 @@
         <label class="check"><input type="checkbox" name="voided" value="1" checked="@ShowVoided" data-autosubmit> @T("Show voided")</label>
     }
     <button class="btn" type="submit">@T("Show")</button>
+    <a class="btn ghost" href="?@QueryKeep()&from=@WebApp.Iso(WeekStart)&to=@WebApp.Iso(DateTime.Today)">@T("This week")</a>
+    <a class="btn ghost" href="?@QueryKeep()&from=@WebApp.Iso(MonthStart)&to=@WebApp.Iso(DateTime.Today)">@T("This month")</a>
     <span class="spacer"></span>
     @if (CanEditData)
     {
@@ -44,16 +46,24 @@
                 <thead><tr>
                     <th>@T("DATE")</th><th>@T("ID")</th><th>@T("NAME")</th><th>@T("DEPARTMENT")</th><th>@T("SHIFT")</th>
                     <th>@T("IN")</th><th>@T("OUT")</th><th>@T("WORKED")</th><th>@T("LATE")</th><th>@T("EARLY")</th><th class="num">@T("SCANS")</th>
+                    @if (CanEditData) { <th class="no-print"></th> }
                 </tr></thead>
                 <tbody>
                     @foreach (var r in Days)
                     {
                         <tr data-href="/Attendance?view=scans&from=@WebApp.Iso(r.Date)&to=@WebApp.Iso(r.Date)&q=@r.Enroll">
-                            <td>@WebApp.Day(r.Date)</td><td>@r.Enroll</td><td>@(r.Name.Length > 0 ? r.Name : "—")</td>
+                            <td>@WebApp.Day(r.Date)</td><td>@r.Enroll</td>
+                            <td>@if (r.Name.Length > 0) { <a href="/Profile?person=@r.Enroll" onclick="event.stopPropagation()">@r.Name</a> } else { <text>—</text> }</td>
                             <td>@(ctx.DeptName(r.Enroll) is { Length: > 0 } dn ? dn : "—")</td><td>@(r.Shift.Length > 0 ? r.Shift : "—")</td>
                             <td>@r.FirstIn.ToString("HH:mm")</td><td>@(r.LastOut?.ToString("HH:mm") ?? "—")</td>
                             <td>@WebApp.Hm(r.Worked)</td><td class="@(r.LateMinutes > 0 ? "c-warn" : "")">@WebApp.Min(r.LateMinutes)</td>
                             <td class="@(r.EarlyLeaveMinutes > 0 ? "c-violet" : "")">@WebApp.Min(r.EarlyLeaveMinutes)</td><td class="num">@r.Punches</td>
+                            @if (CanEditData)
+                            {
+                                <td class="no-print" onclick="event.stopPropagation()">
+                                    <a class="btn small" href="/Attendance?view=scans&from=@WebApp.Iso(r.Date)&to=@WebApp.Iso(r.Date)&q=@r.Enroll">@T("Edit")</a>
+                                </td>
+                            }
                         </tr>
                     }
                 </tbody>
@@ -122,6 +132,17 @@
     public List<GozcuStandalone.Device.AttendanceRecord> All { get; set; } = new();
     public List<GozcuStandalone.Device.AttendanceRecord> Counted { get; set; } = new();
     public List<DailyRow> Days { get; set; } = new();
+
+    private static DateTime WeekStart => DateTime.Today.AddDays(-(((int)DateTime.Today.DayOfWeek + 6) % 7));
+    private static DateTime MonthStart => new(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+    // The current query string with "from"/"to" stripped, so a quick-range link keeps the search/view choice.
+    public string QueryKeep()
+    {
+        var kept = Request.Query.Where(kv => kv.Key != "from" && kv.Key != "to")
+            .Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value.ToString())}");
+        return string.Join("&", kept);
+    }
 
     private void Load(string? from, string? to, string? q, string? view, string? voided)
     {

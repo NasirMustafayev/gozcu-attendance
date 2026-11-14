@@ -6,8 +6,16 @@
     var months = Enumerable.Range(0, 36).Select(i => new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-i)).ToList();
     var people = Store.GetPeople().Where(p => p.Active && Ctx.Allows(p.Enroll)).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
 }
-<h1>@T("Reports")</h1>
-<div class="sub">@Table!.Title · @Table.Subtitle</div>
+@if (Kind == "timesheet" && Profile is not null)
+{
+    <h1>@Profile.Name</h1>
+    <div class="sub">@Loc.F("ID {0}", Profile.Enroll) · @(Profile.Department.Length > 0 ? Profile.Department : T("No department")) · @Loc.Dates(Profile.Month.ToString("MMMM yyyy", CultureInfo.InvariantCulture))</div>
+}
+else
+{
+    <h1>@T("Reports")</h1>
+    <div class="sub">@Table!.Title · @Table.Subtitle</div>
+}
 
 <form method="get" class="row no-print" style="margin-bottom:14px">
     <label class="f">@T("Report")
@@ -32,8 +40,36 @@
         <label class="f">@T("From")<input type="date" name="from" value="@WebApp.Iso(From)"></label>
         <label class="f">@T("To")<input type="date" name="to" value="@WebApp.Iso(To)"></label>
         <button class="btn" type="submit">@T("Show")</button>
+        <a class="btn ghost" href="?kind=@Kind&from=@WebApp.Iso(WeekStart)&to=@WebApp.Iso(DateTime.Today)">@T("This week")</a>
+        <a class="btn ghost" href="?kind=@Kind&from=@WebApp.Iso(MonthStart)&to=@WebApp.Iso(DateTime.Today)">@T("This month")</a>
     }
 </form>
+
+@if (Kind == "timesheet" && Profile is { } p2)
+{
+    <div class="grid cards no-print" style="margin-bottom:16px">
+        <div class="card stat">
+            <div class="label">@T("ABSENT")</div><div class="value @(p2.Absences > 0 ? "c-bad" : "")">@p2.Absences</div><div class="hint">@T("day(s) this month")</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("PRESENT")</div><div class="value">@p2.DaysPresent</div><div class="hint">@T("day(s) with a scan")</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("LATE")</div><div class="value @(p2.LateMinutesTotal > 0 ? "c-warn" : "")">@WebApp.Hm(TimeSpan.FromMinutes(p2.LateMinutesTotal))</div>
+            <div class="hint">@(p2.LateDays > 0 ? Loc.F("{0} time(s) · avg {1} min", p2.LateDays, p2.AverageLateMinutes) : T("time(s)"))</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("LEFT EARLY")</div><div class="value @(p2.EarlyMinutesTotal > 0 ? "c-violet" : "")">@WebApp.Hm(TimeSpan.FromMinutes(p2.EarlyMinutesTotal))</div>
+            <div class="hint">@(p2.EarlyDays > 0 ? Loc.F("{0} time(s) · avg {1} min", p2.EarlyDays, p2.AverageEarlyMinutes) : T("time(s)"))</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("WORKED")</div><div class="value">@WebApp.Hm(p2.Worked)</div><div class="hint">@T("this month")</div>
+        </div>
+        <div class="card stat">
+            <div class="label">@T("OVERTIME")</div><div class="value">@WebApp.Min(p2.OvertimeMinutes)</div><div class="hint">@T("this month")</div>
+        </div>
+    </div>
+}
 
 <partial name="_ReportTable" model="Table" />
 
@@ -50,6 +86,11 @@
     public DateTime From { get; set; }
     public DateTime To { get; set; }
     public ReportTable? Table { get; set; }
+    public PersonProfile? Profile { get; set; }
+
+    // Monday-based week, matching the shift day-of-week numbering used elsewhere in the app.
+    private static DateTime WeekStart => DateTime.Today.AddDays(-(((int)DateTime.Today.DayOfWeek + 6) % 7));
+    private static DateTime MonthStart => new(DateTime.Today.Year, DateTime.Today.Month, 1);
 
     private void Build(string? kind, string? month, uint? person, string? from, string? to)
     {
@@ -74,6 +115,7 @@
             _ => Reports.Monthly(ctx, Month),
         };
         Table = Loc.Localize(table);
+        Profile = Kind == "timesheet" && Person is { } pid ? Reports.Profile(ctx, pid, Month) : null;
     }
 
     public void OnGet(string? kind, string? month, uint? person, string? from, string? to) => Build(kind, month, person, from, to);
@@ -83,5 +125,27 @@
         Build(kind, month, person, from, to);
         var name = new string(Table!.Title.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray()).Trim('_');
         return Export(Table, fmt, name);
+    }
+
+    // Fills one missing day with manual in/out scans at the person's shift times, then returns to the same report.
+    public IActionResult OnPostMarkFull(string key, string? kind, string? month, uint? person, string? from, string? to)
+    {
+        if (!CanEditData) return Denied();
+        var parts = key.Split('\t');
+        if (parts.Length == 2 && uint.TryParse(parts[0], out var enroll) && DateTime.TryParse(parts[1], CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        {
+            var ctx = Ctx;
+            var shift = ctx.Shifts.For(date, enroll);
+            var name = ctx.NameOf(enroll);
+            if (shift is null) FlashError = T("That person has no shift on that day.");
+            else if (!Store.MarkFull(enroll, date, shift, Who)) FlashError = T("That day already has entries.");
+            else
+            {
+                Flash = Loc.F("Marked {0:yyyy-MM-dd} as a full day for {1}.", date, name);
+                Log("Info", "Manual", $"Marked {date:yyyy-MM-dd} as a full day for {name} (ID {enroll}): {shift.Start:hh\\:mm}–{shift.End:hh\\:mm}.");
+            }
+        }
+        Build(kind, month, person, from, to);
+        return Page();
     }
 }

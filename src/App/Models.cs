@@ -1,6 +1,18 @@
+using System.Windows;
 using System.Windows.Media;
 
 namespace GozcuStandalone.App;
+
+public static class VisualTreeExtensions
+{
+    // Walks up from a clicked element to find the DataGridCell (or other ancestor type) it was inside.
+    public static T? FindAncestor<T>(this DependencyObject d) where T : DependencyObject
+    {
+        var current = d;
+        while (current is not null && current is not T) current = VisualTreeHelper.GetParent(current);
+        return current as T;
+    }
+}
 
 public sealed record FeedRow(string Time, string Name, string Id, string Method, Brush MethodBack, Brush MethodFore, string Initial);
 

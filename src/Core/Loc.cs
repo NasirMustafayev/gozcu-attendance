@@ -49,6 +49,9 @@ public static class Loc
             Subtitle = Dates(t.Subtitle),
             Headers = t.Headers.Select(T).ToList(),
             Rows = t.Rows,
+            RowKinds = t.RowKinds,
+            MarkFullKeys = t.MarkFullKeys,
+            EditKeys = t.EditKeys,
             Footer = Dates(t.Footer),
         };
     }
@@ -243,5 +246,16 @@ public static class Loc
         ["\n\n{0:N0} assigned day(s) will lose their shift."] = "\n\n{0:N0} təyin edilmiş gün növbəsini itirəcək.",
         ["\n\nThis shift was copied from the original software and will come back if you import from it again."] = "\n\nBu növbə orijinal proqramdan köçürülüb və yenidən idxal etsəniz geri qayıdacaq.",
         ["Open Attendance"] = "Davamiyyəti aç", ["Exit"] = "Çıxış", ["Info"] = "Məlumat", ["Warn"] = "Xəbərdarlıq", ["Error"] = "Xəta",
+        ["Mark full day"] = "Tam gün say", ["This week"] = "Bu həftə", ["This month"] = "Bu ay",
+        ["That person has no shift on that day."] = "Bu şəxsin o gün növbəsi yoxdur.", ["That day already has entries."] = "O gündə artıq qeydlər var.",
+        ["Marked {0:yyyy-MM-dd} as a full day for {1}."] = "{1} üçün {0:yyyy-MM-dd} tam iş günü kimi qeyd edildi.",
+        ["Edit this day's scans"] = "Bu günün skanlarını redaktə et",
+        ["Overwrite in place: change the time directly, with no void/replace entry in the audit list."] = "Birbaşa yerində dəyiş: vaxtı birbaşa dəyişdirir, jurnalda ləğv/əvəz qeydi olmadan.",
+        ["Profile"] = "Profil", ["{0} · Profile"] = "{0} · Profil",
+        ["ABSENT"] = "YOXLUQ", ["OVERTIME"] = "ƏLAVƏ VAXT",
+        ["day(s) this month"] = "gün bu ay", ["day(s) with a scan"] = "gün skanla",
+        ["time(s)"] = "dəfə", ["time(s) · avg {0} min"] = "dəfə · orta {0} dəq", ["{0} time(s) · avg {1} min"] = "{0} dəfə · orta {1} dəq",
+        ["ID {0}"] = "ID {0}", ["Full timesheet"] = "Tam tabel",
+        ["Double-click a row to see that person's profile"] = "İşçinin profilini görmək üçün sətrə cüt klikləyin",
     };
 }
