@@ -34,3 +34,61 @@ dotnet publish src/Web -c Release -r win-x64 --self-contained true -p:PublishSin
 
 Reading from the device never removes scans from it unless "take over from the original software" is turned on,
 so PDKS can keep running alongside. The PDKS database is only ever read.
+
+## Screenshots
+
+<!-- Employee names and IDs are blurred. -->
+Desktop app (WPF):
+
+| Dashboard | Attendance | Reports |
+|---|---|---|
+| ![Dashboard](docs/dashboard.png) | ![Attendance](docs/attendance.png) | ![Reports](docs/reports.png) |
+
+Web app (same data, in a browser):
+
+| Dashboard | Attendance | Reports |
+|---|---|---|
+| ![Dashboard](docs/web-dashboard.png) | ![Attendance](docs/web-attendance.png) | ![Reports](docs/web-reports.png) |
+
+## How it works
+
+```mermaid
+flowchart LR
+    T["Face / fingerprint terminal"]
+    PDKS["Original Gozcu PDKS software"]
+    PDB[("PDKS database")]
+
+    subgraph CORE["Core library (C#, .NET 8)"]
+        P["Device protocol<br/>reverse-engineered TCP frames"]
+        S["DeviceSync<br/>lock, pull scans, ack, unlock, set clock"]
+        I["PdksImporter<br/>read-only import"]
+        L["Shifts and reports logic"]
+    end
+
+    DB[("SQLite<br/>attendance.db")]
+    APP["Desktop app (WPF)<br/>tray, dashboard, schedule, reports"]
+    WEB["Web app (ASP.NET Core)<br/>sign-in with roles"]
+    CLI["gozcu CLI<br/>status, pull, reports, selftest"]
+
+    T <-->|"TCP"| P
+    P --> S
+    S --> DB
+    PDKS --> PDB
+    PDB -.->|"read only, every 5 min"| I
+    I --> DB
+    DB --> L
+    APP --> CORE
+    CLI --> CORE
+    WEB -->|"same database"| DB
+    APP --> DB
+```
+
+**The protocol.** The terminal's wire format was worked out from packet captures of the vendor app. Each frame ends
+with a 16-bit little-endian checksum of the bytes before it. A session locks the terminal, reads the pending scans,
+acknowledges them and always ends with an unlock, because the terminal ignores scans while it is locked.
+
+**Safe by default.** Reading from the device does not remove scans unless "take over from the original software" is
+on, so PDKS can keep running alongside. The PDKS database is only ever read.
+
+**Testing.** `gozcu selftest` checks the protocol code against captured real traffic, so a change to the frame
+handling is caught before it reaches the device.
