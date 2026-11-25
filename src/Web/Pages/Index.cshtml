@@ -41,7 +41,7 @@
     <div class="grid two">
         <div class="grid">
             <div class="card">
-                <div class="row"><h2>@T("Device")</h2><span class="spacer"></span><span class="muted">@Settings.DeviceIp:@Settings.DevicePort</span></div>
+                <div class="row"><h2>@T("Device")</h2><span class="spacer"></span><span class="muted">@(string.IsNullOrWhiteSpace(Settings.DeviceIp) ? T("No device set") : $"{Settings.DeviceIp}:{Settings.DevicePort}")</span></div>
                 <div class="kv">
                     <div><div class="k">@T("Serial number")</div><div>@(status is { Serial.Length: > 0 } ? status.Serial : "—")</div></div>
                     <div><div class="k">@T("Last check")</div><div>@(status?.CheckedAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "—")</div></div>

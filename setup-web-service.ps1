@@ -3,7 +3,7 @@
 $log = Join-Path $PSScriptRoot "setup_web_service.log"
 Start-Transcript -Path $log -Force | Out-Null
 try {
-    $exe = "C:\Users\IdeaDesktop5\Desktop\Work related\GozcuStandalone\dist\web\AttendanceWeb.exe"
+    $exe = Join-Path $PSScriptRoot "dist\web\AttendanceWeb.exe"
 
     # A copy started by hand would hold port 5080.
     Get-Process AttendanceWeb -ErrorAction SilentlyContinue | Stop-Process -Force

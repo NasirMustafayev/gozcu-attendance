@@ -26,13 +26,13 @@ From other computers in the office use `http://<this PC's IP>:5080` (Windows ask
 Edit `dist\web\appsettings.json` and set the database path, because a service runs under a different account:
 
 ```json
-"DatabasePath": "C:\\Users\\IdeaDesktop5\\AppData\\Local\\GozcuStandalone\\attendance.db"
+"DatabasePath": "C:\\Users\\<user>\\AppData\\Local\\GozcuStandalone\\attendance.db"
 ```
 
 Then, in an administrator PowerShell:
 
 ```powershell
-sc.exe create AttendanceWeb binPath= "C:\Users\IdeaDesktop5\Desktop\Work related\GozcuStandalone\dist\web\AttendanceWeb.exe" start= auto
+sc.exe create AttendanceWeb binPath= "<install folder>\GozcuStandalone\dist\web\AttendanceWeb.exe" start= auto
 sc.exe start AttendanceWeb
 ```
 

@@ -379,6 +379,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Device IP address" Style="{StaticResource Label}" Margin="0,0,0,4"/>
                                     <TextBox x:Name="SetIp"/>
+                                    <TextBlock Text="The terminal's address on your local network, e.g. 192.168.1.50" Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
                                     <TextBlock Text="Port" Style="{StaticResource Label}" Margin="0,0,0,4"/>

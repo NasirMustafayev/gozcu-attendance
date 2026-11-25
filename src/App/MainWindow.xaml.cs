@@ -560,7 +560,9 @@ public partial class MainWindow : Window
             ? Loc.T("No schedule yet. Import from the original software (Settings) or assign shifts in Schedule.")
             : notIn.Count == 0 ? Loc.T("Everyone expected today has scanned in.") : "";
 
-        DeviceAddress.Text = $"{_settings.DeviceIp}:{_settings.DevicePort}";
+        DeviceAddress.Text = string.IsNullOrWhiteSpace(_settings.DeviceIp)
+            ? Loc.T("No device set — enter its address in Settings")
+            : $"{_settings.DeviceIp}:{_settings.DevicePort}";
         DeviceSerial.Text = _serial.Length > 0 ? _serial : "—";
         DeviceLastSync.Text = _lastSync is { } t ? t.ToString("HH:mm:ss", CultureInfo.InvariantCulture) : "—";
         SidebarSync.Text = _lastSync is { } s ? Loc.F("Last sync {0:HH:mm:ss}", s) : Loc.T("Not synced yet");

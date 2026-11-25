@@ -1,8 +1,24 @@
 # Attendance (Gozcu PDKS standalone)
 
-An independent attendance system for the face and fingerprint terminal at `192.168.100.254:5005`, replacing the
-Gozcu PDKS software. It talks to the terminal directly over its own TCP protocol (reverse-engineered from PDKS)
-and keeps its data in a local SQLite database.
+An independent attendance system for a face and fingerprint terminal, talking to it directly instead of through
+the vendor's own software.
+
+## Why I built it
+
+The vendor software (Gozcu PDKS) clears scans off the device as it reads them and locks the company into its own
+program: no API, no export it can share, nothing else can read the terminal without racing it for the same data.
+So I reverse-engineered the terminal's own protocol and built a system that talks to it directly, keeps its own
+database, and gives the company a desktop app, a web app with roles, and a CLI — independent of the vendor's
+software, able to run alongside it or replace it.
+
+## How I built it with AI
+
+I captured real traffic between the vendor app and the terminal, then used Claude Code to help decode the frames
+and write the protocol code from that capture. Nothing was trusted until it worked against the real device:
+`gozcu selftest` replays the captured bytes through the code and checks the result matches, so a change to the
+frame handling is caught before it ever reaches the terminal.
+
+*Not affiliated with Gozcu. Built for interoperability with a device we own. No vendor code is included.*
 
 ## Projects
 

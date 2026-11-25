@@ -105,6 +105,9 @@ public sealed class DeviceSync
 
     private DeviceClient Open(bool trace)
     {
+        if (string.IsNullOrWhiteSpace(_settings.DeviceIp))
+            throw new InvalidOperationException("No device address set. Enter the terminal's IP address in Settings.");
+
         var dev = new DeviceClient(_settings.DeviceIp, _settings.DevicePort) { Trace = trace };
         try
         {

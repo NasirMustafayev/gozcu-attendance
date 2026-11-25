@@ -21,7 +21,7 @@ public static class AppPaths
 public sealed class AppSettings
 {
     public string Language { get; set; } = "en";
-    public string DeviceIp { get; set; } = "192.168.100.254";
+    public string DeviceIp { get; set; } = "";
     public int DevicePort { get; set; } = 5005;
     public int SyncIntervalSeconds { get; set; } = 60;
     public TimeSpan WorkStart { get; set; } = new(9, 0, 0);
