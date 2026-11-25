@@ -74,6 +74,12 @@ public sealed partial class AttendanceStore
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS always_present (
+                    enroll_number INTEGER PRIMARY KEY,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    first_in TEXT NOT NULL,
+                    last_out TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS app_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts TEXT NOT NULL,

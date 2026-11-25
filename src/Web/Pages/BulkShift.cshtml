@@ -1,0 +1,78 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Apply shift");
+    ViewData["Nav"] = "/People";
+    var shifts = Store.GetShifts().OrderBy(s => s.Id).ToList();
+}
+<div class="card" style="max-width:560px">
+    <h1 style="font-size:20px">@T("Apply shift")</h1>
+    <p class="sub">@Loc.F("Choose a shift and a date range to apply to all {0} people you selected.", Ids.Count)</p>
+    @if (Ids.Count == 0)
+    {
+        <div class="error-text">@T("Nothing was selected. Go back and tick the people you want first.")</div>
+        <div class="row"><span class="spacer"></span><a class="btn" href="@BackUrl">@T("Back")</a></div>
+    }
+    else
+    {
+        <form method="post" class="grid" style="gap:14px">
+            @foreach (var id in Ids) { <input type="hidden" name="ids" value="@id"> }
+            <input type="hidden" name="back" value="@BackUrl">
+            <label class="f">@T("Shift")
+                <select name="shiftId" id="bs-shift">
+                    @foreach (var s in shifts) { <option value="@s.Id">@s.Name (@s.Start.ToString(@"hh\:mm")–@s.End.ToString(@"hh\:mm"))</option> }
+                </select>
+            </label>
+            <label class="check"><input type="checkbox" name="clear" value="1" id="bs-clear" onclick="document.getElementById('bs-shift').disabled=this.checked"> @T("Remove shift instead (clear the schedule for this range)")</label>
+            <div class="row">
+                <label class="f">@T("From")<input type="date" name="from" value="@WebApp.Iso(DateTime.Today)" required></label>
+                <label class="f">@T("To")<input type="date" name="to" value="@WebApp.Iso(DateTime.Today)" required></label>
+            </div>
+            <label class="check"><input type="checkbox" name="onlyShiftDays" value="1" checked> @T("Only on days the shift runs")</label>
+            @if (Error is not null) { <div class="error-text">@Error</div> }
+            <div class="row">
+                <span class="spacer"></span>
+                <a class="btn" href="@BackUrl">@T("Cancel")</a>
+                <button class="btn primary" type="submit">@T("Apply")</button>
+            </div>
+        </form>
+    }
+</div>
+
+@functions {
+    public List<uint> Ids { get; set; } = new();
+    public string BackUrl { get; set; } = "/People";
+    public string? Error { get; set; }
+
+    private void SetBack(string? back) => BackUrl = back is { Length: > 0 } b && Url.IsLocalUrl(b) ? b : "/People";
+
+    public IActionResult OnGet(uint[]? id)
+    {
+        if (!CanEditData) return Denied();
+        SetBack(Request.Headers.Referer.ToString());
+        Ids = (id ?? Array.Empty<uint>()).Distinct().ToList();
+        return Page();
+    }
+
+    public IActionResult OnPost(uint[]? ids, int? shiftId, string? from, string? to, string? onlyShiftDays, string? clear, string? back)
+    {
+        if (!CanEditData) return Denied();
+        SetBack(back);
+        Ids = (ids ?? Array.Empty<uint>()).Distinct().ToList();
+        if (Ids.Count == 0) { Error = T("Nothing was selected."); return Page(); }
+
+        bool remove = clear == "1";
+        var shift = Store.GetShifts().FirstOrDefault(s => s.Id == shiftId);
+        if (!remove && shift is null) { Error = T("Choose a shift first."); return Page(); }
+
+        if (ParseDate(from) is not { } a || ParseDate(to) is not { } b) { Error = T("Pick a date range."); return Page(); }
+        if (b < a) (a, b) = (b, a);
+
+        var written = Store.AssignShift(Ids, a, b, remove ? null : shift!.Id, onlyShiftDays == "1");
+        Log("Info", "Schedule", remove
+            ? $"Bulk-cleared shift for {Ids.Count} people, {a:yyyy-MM-dd} to {b:yyyy-MM-dd} ({written} day(s))."
+            : $"Bulk-assigned “{shift!.Name}” to {Ids.Count} people, {a:yyyy-MM-dd} to {b:yyyy-MM-dd} ({written} day(s)).");
+        Flash = Loc.F("Updated {0} day(s) for {1} people.", written, Ids.Count);
+        return LocalRedirect(BackUrl);
+    }
+}

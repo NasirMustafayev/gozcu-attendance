@@ -1,0 +1,86 @@
+@page
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Bulk manual entry");
+    ViewData["Nav"] = "/Attendance";
+}
+<div class="card" style="max-width:560px">
+    <h1 style="font-size:20px">@T("Bulk manual entry")</h1>
+    <p class="sub">@Loc.F("This entry will be added for all {0} people you selected. Fill in the log in time, the log off time, or both.", Ids.Count)</p>
+    @if (Ids.Count == 0)
+    {
+        <div class="error-text">@T("Nothing was selected. Go back and tick the people you want first.")</div>
+        <div class="row"><span class="spacer"></span><a class="btn" href="@BackUrl">@T("Back")</a></div>
+    }
+    else
+    {
+        <form method="post" class="grid" style="gap:14px">
+            @foreach (var id in Ids) { <input type="hidden" name="ids" value="@id"> }
+            <input type="hidden" name="back" value="@BackUrl">
+            <div class="row">
+                <label class="f">@T("Date")<input type="date" name="date" value="@WebApp.Iso(Date)" required></label>
+                <label class="f">@T("Log in (HH:mm)")<input type="time" name="login" value="@LogIn"></label>
+                <label class="f">@T("Log off (HH:mm)")<input type="time" name="logoff" value="@LogOff"></label>
+            </div>
+            <label class="f">@T("Reason")<textarea name="note" required>@Note</textarea></label>
+            @if (Error is not null) { <div class="error-text">@Error</div> }
+            <div class="row">
+                <span class="spacer"></span>
+                <a class="btn" href="@BackUrl">@T("Cancel")</a>
+                <button class="btn primary" type="submit">@Loc.F("Add entry for {0} people", Ids.Count)</button>
+            </div>
+        </form>
+    }
+</div>
+
+@functions {
+    public List<uint> Ids { get; set; } = new();
+    public DateTime Date { get; set; } = DateTime.Today;
+    public string LogIn { get; set; } = "";
+    public string LogOff { get; set; } = "";
+    public string Note { get; set; } = "";
+    public string BackUrl { get; set; } = "/Attendance";
+    public string? Error { get; set; }
+
+    private void SetBack(string? back) => BackUrl = back is { Length: > 0 } b && Url.IsLocalUrl(b) ? b : "/Attendance";
+
+    public IActionResult OnGet(uint[]? id, string? back)
+    {
+        if (!CanEditData) return Denied();
+        SetBack(Request.Headers.Referer.ToString());
+        Ids = (id ?? Array.Empty<uint>()).Distinct().ToList();
+        LogIn = DateTime.Now.ToString("HH:mm");
+        return Page();
+    }
+
+    public IActionResult OnPost(uint[]? ids, string? date, string? login, string? logoff, string? note, string? back)
+    {
+        if (!CanEditData) return Denied();
+        SetBack(back);
+        Ids = (ids ?? Array.Empty<uint>()).Distinct().ToList();
+        LogIn = login ?? ""; LogOff = logoff ?? ""; Note = (note ?? "").Trim();
+        Date = ParseDate(date) ?? DateTime.Today;
+
+        if (Ids.Count == 0) { Error = T("Nothing was selected."); return Page(); }
+        var tin = string.IsNullOrWhiteSpace(login) ? (TimeSpan?)null : ParseTime(login);
+        var tout = string.IsNullOrWhiteSpace(logoff) ? (TimeSpan?)null : ParseTime(logoff);
+        if ((!string.IsNullOrWhiteSpace(login) && tin is null) || (!string.IsNullOrWhiteSpace(logoff) && tout is null)) { Error = T("Times should look like 09:30."); return Page(); }
+        if (tin is null && tout is null) { Error = T("Enter the log in time, the log off time, or both."); return Page(); }
+        if (tin is { } a && tout is { } b && b <= a) { Error = T("The log off time must be after the log in time."); return Page(); }
+        if ((Date + (tout ?? tin!.Value)) > DateTime.Now.AddMinutes(5)) { Error = T("That moment is in the future."); return Page(); }
+        if (Note.Length == 0) { Error = T("Please write a short reason so the entry can be explained later."); return Page(); }
+
+        int entries = 0;
+        foreach (var enroll in Ids)
+        {
+            foreach (var (label, t) in new[] { ("log in", tin), ("log off", tout) })
+            {
+                if (t is not { } time) continue;
+                if (Store.AddManual(enroll, Date + time, $"{label}: {Note}")) entries++;
+            }
+        }
+        Log("Info", "Manual", $"Bulk manual entry added for {Ids.Count} people ({entries} scan(s) written). Reason: {Note}");
+        Flash = Loc.F("Added {0} scan(s) for {1} people.", entries, Ids.Count);
+        return LocalRedirect(BackUrl);
+    }
+}

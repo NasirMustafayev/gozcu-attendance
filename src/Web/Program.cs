@@ -86,8 +86,13 @@ app.Use(async (ctx, next) =>
                 .Select(p => p.Folder).ToHashSet();
             // "/" is the dashboard's route, just as the sidebar treats it as "/Index".
             var path = ctx.Request.Path.Value is "/" or "" ? "/Index" : ctx.Request.Path.Value!;
-            var restricted = WebApp.Pages.Select(p => p.Folder).Any(f => path.StartsWith(f, StringComparison.OrdinalIgnoreCase));
-            if (restricted && !allowed.Any(f => path.StartsWith(f, StringComparison.OrdinalIgnoreCase)))
+            // A plain StartsWith would match "/Logout" against the "/Log" folder; require the folder
+            // name to end there (end of path, or the next character is "/") so only that page counts.
+            static bool InFolder(string path, string folder) =>
+                path.StartsWith(folder, StringComparison.OrdinalIgnoreCase) &&
+                (path.Length == folder.Length || path[folder.Length] == '/');
+            var restricted = WebApp.Pages.Select(p => p.Folder).Any(f => InFolder(path, f));
+            if (restricted && !allowed.Any(f => InFolder(path, f)))
             {
                 var target = allowed.FirstOrDefault() is { Length: > 0 } first ? first : "/Settings";
                 ctx.Response.Redirect(target == "/Index" ? "/" : target);

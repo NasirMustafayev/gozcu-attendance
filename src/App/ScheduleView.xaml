@@ -40,7 +40,15 @@
                 <StackPanel>
                     <TextBlock Text="Assign shifts" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
                     <TextBlock Style="{StaticResource Label}" Margin="0,2,0,10"
-                               Text="Select people in the table below (Ctrl or Shift to select several), pick a shift and the dates, then press Apply."/>
+                               Text="Select people in the table below (Ctrl or Shift to select several, or use the buttons), pick a shift and the dates, then press Apply."/>
+                    <WrapPanel Margin="0,0,0,10">
+                        <Button Content="Select all" Style="{StaticResource GhostButton}" Margin="0,0,10,0" Click="SelectAllCal_Click"/>
+                        <Button Content="Select none" Style="{StaticResource GhostButton}" Margin="0,0,10,0" Click="SelectNoneCal_Click"/>
+                        <StackPanel Margin="0,0,10,0">
+                            <ComboBox x:Name="SelectDeptBox" DisplayMemberPath="Name" Width="170" Padding="10,8" SelectionChanged="SelectDeptBox_Changed"/>
+                        </StackPanel>
+                        <Button Content="Bulk manual entry…" Style="{StaticResource GhostButton}" Click="BulkEntryCal_Click"/>
+                    </WrapPanel>
                     <WrapPanel>
                         <StackPanel Margin="0,0,14,0">
                             <TextBlock Text="Shift" Style="{StaticResource Label}" Margin="0,0,0,4"/>

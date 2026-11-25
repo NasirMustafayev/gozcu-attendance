@@ -81,3 +81,19 @@ public static class LeaveTypes
         (10, "Annual leave"), (11, "Sick leave"), (12, "Unpaid leave"), (13, "Business trip"), (14, "Other"),
     };
 }
+
+// A person an admin has decided should always show as present, with the first-in/last-out
+// time to show for them instead of a real scan (e.g. someone who never badges in).
+public sealed record AlwaysPresentEntry(uint Enroll, bool Enabled, TimeSpan FirstIn, TimeSpan LastOut);
+
+public sealed class AlwaysPresentBook
+{
+    private readonly Dictionary<uint, AlwaysPresentEntry> _byPerson;
+
+    public AlwaysPresentBook(IEnumerable<AlwaysPresentEntry> entries) =>
+        _byPerson = entries.Where(e => e.Enabled).ToDictionary(e => e.Enroll);
+
+    public AlwaysPresentEntry? For(uint enroll) => _byPerson.GetValueOrDefault(enroll);
+
+    public bool IsAlwaysPresent(uint enroll) => _byPerson.ContainsKey(enroll);
+}

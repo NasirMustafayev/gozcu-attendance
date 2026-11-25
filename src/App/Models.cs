@@ -22,6 +22,7 @@ public sealed record ScanView(long Key, string When, string Id, string Name, str
 
 public sealed class PersonRow
 {
+    public bool Selected { get; set; }
     public uint Enroll { get; set; }
     public string Name { get; set; } = "";
     public string Status { get; set; } = "Active";

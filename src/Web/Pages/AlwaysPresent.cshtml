@@ -1,0 +1,57 @@
+@page
+@using System.Globalization
+@inherits WebPage
+@{
+    ViewData["Title"] = T("Always present");
+    ViewData["Nav"] = "/People";
+    if (!IsAdminUser) { Response.Redirect("/Denied"); return; }
+    var existing = Store.GetAlwaysPresent().ToDictionary(e => e.Enroll);
+    var people = Store.GetPeople().Where(p => p.Active).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+}
+<div class="row"><h1>@T("Always present")</h1><span class="spacer"></span><a class="btn" href="/People">@T("Back")</a></div>
+<div class="sub">@T("Turn this on for someone who should always show as present on the dashboard, with no real scan needed (for example someone who never badges in). First in / Last out are shown for them every day on days they have no real scan, in HH:mm. They are also left out of absence, late and early-leave reports.")</div>
+
+<div class="card flush" style="max-width:720px">
+    <form method="post" asp-page-handler="Save">
+        <table>
+            <thead><tr><th>@T("ID")</th><th>@T("NAME")</th><th>@T("ON")</th><th>@T("FIRST IN")</th><th>@T("LAST OUT")</th></tr></thead>
+            <tbody>
+                @foreach (var p in people)
+                {
+                    existing.TryGetValue(p.Enroll, out var e);
+                    <tr>
+                        <td>@p.Enroll</td>
+                        <td>@p.Name</td>
+                        <td><input type="checkbox" name="on_@p.Enroll" value="1" checked="@(e?.Enabled == true)"></td>
+                        <td><input type="time" name="in_@p.Enroll" value="@((e?.FirstIn ?? new TimeSpan(9, 0, 0)).ToString(@"hh\:mm", CultureInfo.InvariantCulture))" style="width:110px"></td>
+                        <td><input type="time" name="out_@p.Enroll" value="@((e?.LastOut ?? new TimeSpan(18, 0, 0)).ToString(@"hh\:mm", CultureInfo.InvariantCulture))" style="width:110px"></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="row" style="margin-top:14px"><button class="btn primary">@T("Save")</button></div>
+    </form>
+</div>
+
+@functions {
+    public void OnGet() { }
+
+    public IActionResult OnPostSave()
+    {
+        if (!IsAdminUser) return Denied();
+        int changed = 0;
+        foreach (var p in Store.GetPeople().Where(x => x.Active))
+        {
+            var enabled = Request.Form.ContainsKey($"on_{p.Enroll}");
+            var inText = Request.Form[$"in_{p.Enroll}"].ToString();
+            var outText = Request.Form[$"out_{p.Enroll}"].ToString();
+            if (!TimeSpan.TryParseExact(inText, @"hh\:mm", CultureInfo.InvariantCulture, out var firstIn)) firstIn = new TimeSpan(9, 0, 0);
+            if (!TimeSpan.TryParseExact(outText, @"hh\:mm", CultureInfo.InvariantCulture, out var lastOut)) lastOut = new TimeSpan(18, 0, 0);
+            Store.SetAlwaysPresent(p.Enroll, enabled, firstIn, lastOut);
+            changed++;
+        }
+        Log("Info", "People", $"Always-present list saved ({changed} people).");
+        Flash = T("Saved.");
+        return RedirectToPage();
+    }
+}

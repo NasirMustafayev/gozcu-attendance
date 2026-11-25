@@ -8,9 +8,10 @@
         <TextBlock x:Name="IntroText" Style="{StaticResource Label}" FontSize="13" TextWrapping="Wrap" Margin="0,6,0,18"
                    Text="Use this when a scan is missing, for example the device was offline or someone forgot to scan. Fill in the log in time, the log off time, or both. Entries are marked as manual in every report and kept in the audit list."/>
 
-        <TextBlock Text="Person" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+        <TextBlock x:Name="PersonLabel" Text="Person" Style="{StaticResource Label}" Margin="0,0,0,4"/>
         <ComboBox x:Name="PersonBox" IsEditable="True" Padding="10,8" FontSize="14"
                   DisplayMemberPath="Display" TextSearch.TextPath="Display" IsTextSearchEnabled="True"/>
+        <TextBlock x:Name="PersonCountText" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Ink}" Visibility="Collapsed"/>
 
         <Grid Margin="0,14,0,0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="100"/><ColumnDefinition x:Name="OutGap" Width="14"/><ColumnDefinition x:Name="OutCol" Width="100"/></Grid.ColumnDefinitions>

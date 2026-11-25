@@ -43,6 +43,7 @@ public partial class ScheduleView : UserControl
     {
         if (!_ready || AppServices.Store is null) return;
         LoadShiftChoices();
+        LoadDeptChoices();
         BuildCalendar();
         LoadShifts();
         LoadHolidays();
@@ -83,6 +84,59 @@ public partial class ScheduleView : UserControl
         var items = AppServices.Store.GetShifts().Select(s => new ShiftItem(s, $"{s.Name}  ({s.Start:hh\\:mm}–{s.End:hh\\:mm})")).ToList();
         ShiftBox.ItemsSource = items;
         ShiftBox.SelectedItem = items.FirstOrDefault(i => i.Def?.Id == keep) ?? items.FirstOrDefault();
+    }
+
+    private void LoadDeptChoices()
+    {
+        var items = new List<DeptItem> { new(null, Loc.T("Select department")) };
+        items.AddRange(AppServices.Store.GetDepartments().OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).Select(d => new DeptItem(d.Id, d.Name)));
+        SelectDeptBox.ItemsSource = items;
+        SelectDeptBox.SelectedIndex = 0;
+    }
+
+    private void SelectAllCal_Click(object sender, RoutedEventArgs e)
+    {
+        CalGrid.SelectAll();
+        _selected = CalGrid.SelectedItems.OfType<DataRowView>().Select(r => (uint)r["Id"]).ToHashSet();
+    }
+
+    private void SelectNoneCal_Click(object sender, RoutedEventArgs e)
+    {
+        CalGrid.SelectedItems.Clear();
+        _selected.Clear();
+    }
+
+    private void SelectDeptBox_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (SelectDeptBox.SelectedItem is not DeptItem { Id: { } id } d) return;
+        var deptOf = AppServices.Store.GetPersonDepartments();
+        CalGrid.SelectedItems.Clear();
+        foreach (var rv in CalGrid.Items.OfType<DataRowView>())
+            if (deptOf.TryGetValue((uint)rv["Id"], out var pd) && pd == d.Id) CalGrid.SelectedItems.Add(rv);
+        _selected = CalGrid.SelectedItems.OfType<DataRowView>().Select(r => (uint)r["Id"]).ToHashSet();
+        SelectDeptBox.SelectedIndex = 0;
+    }
+
+    private void BulkEntryCal_Click(object sender, RoutedEventArgs e)
+    {
+        var ids = SelectedPeople();
+        if (ids.Count == 0) { AppServices.Toast("Select one or more people in the table first."); return; }
+
+        var win = new ManualEntryWindow(Array.Empty<PersonChoice>(), null, null, bulkCount: ids.Count) { Owner = Owner };
+        if (win.ShowDialog() != true) return;
+
+        int entries = 0;
+        foreach (var id in ids)
+        {
+            foreach (var (label, at) in new[] { ("log in", win.LogIn), ("log off", win.LogOff) })
+            {
+                if (at is not { } moment) continue;
+                if (AppServices.Store.AddManual(id, moment, $"{label}: {win.Note}")) entries++;
+            }
+        }
+        AppServices.Log("Info", "Manual", $"Bulk manual entry added for {ids.Count} people ({entries} scan(s) written). Reason: {win.Note}");
+        AppServices.Toast(Loc.F("Added {0} scan(s) for {1} people.", entries, ids.Count));
+        AppServices.RaiseDataChanged();
     }
 
     private void BuildCalendar()

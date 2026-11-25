@@ -22,6 +22,10 @@
             <button class="btn primary">@T("Add person")</button>
         </form>
         <a class="btn" href="/Departments">@T("Departments…")</a>
+        @if (IsAdminUser)
+        {
+            <a class="btn" href="/AlwaysPresent">@T("Always present…")</a>
+        }
         <span class="muted" style="align-self:center">
             @(unnamed.Count > 0 ? Loc.F("{0} unnamed ID(s) · next free ID: {1}", unnamed.Count, Store.NextFreeId()) : Loc.F("No unnamed IDs · next free ID: {0}", Store.NextFreeId()))
         </span>
@@ -42,14 +46,36 @@
     </div>
 }
 
+@if (CanEditData)
+{
+    <form id="bulk-select-form" method="get" action="/BulkEntry"></form>
+    <div class="row no-print" style="margin-bottom:14px">
+        <button type="button" class="btn" onclick="document.querySelectorAll('.bulk-sel').forEach(c=>c.checked=true)">@T("Select all")</button>
+        <button type="button" class="btn" onclick="document.querySelectorAll('.bulk-sel').forEach(c=>c.checked=false)">@T("Select none")</button>
+        <select id="bulk-dept-select" onchange="if(this.value){document.querySelectorAll('.bulk-sel').forEach(c=>c.checked=(c.dataset.dept===this.value));this.selectedIndex=0;}">
+            <option value="">@T("Select department")</option>
+            @foreach (var d in depts) { <option value="@d.Id">@d.Name</option> }
+        </select>
+        <button class="btn" type="submit" form="bulk-select-form" formaction="/BulkEntry">@T("Bulk manual entry…")</button>
+        <button class="btn" type="submit" form="bulk-select-form" formaction="/BulkShift">@T("Apply shift…")</button>
+    </div>
+}
+
 <div class="card flush">
     <div class="table-wrap">
         <table id="people-table">
-            <thead><tr><th>@T("ID")</th><th>@T("STATUS")</th><th>@T("NAME")</th><th>@T("DEPARTMENT")</th>@if (CanEditData) { <th class="no-print">@T("Actions")</th> }</tr></thead>
+            <thead><tr>
+                @if (CanEditData) { <th class="no-print"><input type="checkbox" data-select-all=".bulk-sel"></th> }
+                <th>@T("ID")</th><th>@T("STATUS")</th><th>@T("NAME")</th><th>@T("DEPARTMENT")</th>@if (CanEditData) { <th class="no-print">@T("Actions")</th> }
+            </tr></thead>
             <tbody>
                 @foreach (var p in people)
                 {
                     <tr>
+                        @if (CanEditData)
+                        {
+                            <td class="no-print"><input type="checkbox" class="bulk-sel" name="id" value="@p.Enroll" form="bulk-select-form" data-dept="@(deptOf.TryGetValue(p.Enroll, out var pdept) ? pdept.ToString() : "")"></td>
+                        }
                         <td>@p.Enroll</td>
                         <td>@if (p.Active) { <span class="pill finger">@T("Active")</span> } else { <span class="pill">@T("Former")</span> }</td>
                         @if (CanEditData)

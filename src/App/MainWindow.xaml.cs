@@ -363,6 +363,11 @@ public partial class MainWindow : Window
             if (DeptBox.SelectedItem is DeptItem { Id: null }) AppServices.DepartmentFilter = null;
 
             DeptColumn.ItemsSource = new[] { "" }.Concat(items.Skip(1).Select(i => i.Name)).ToList();
+
+            var selectItems = new List<DeptItem> { new(null, Loc.T("Select department")) };
+            selectItems.AddRange(items.Skip(1));
+            SelectDeptBox.ItemsSource = selectItems;
+            SelectDeptBox.SelectedIndex = 0;
         }
         finally { _loadingDepts = false; }
     }
@@ -379,6 +384,88 @@ public partial class MainWindow : Window
         new DepartmentsWindow { Owner = this }.ShowDialog();
         LoadDepartments();
         LoadPeople();
+    }
+
+    private void AlwaysPresent_Click(object sender, RoutedEventArgs e)
+    {
+        new AlwaysPresentWindow { Owner = this }.ShowDialog();
+        AppServices.RaiseDataChanged();
+    }
+
+    // ---------- bulk selection on the People page ----------
+
+    private List<uint> SelectedPeopleIds() => _people.Where(p => p.Selected).Select(p => p.Enroll).ToList();
+
+    private void UpdateSelectionUi()
+    {
+        var count = SelectedPeopleIds().Count;
+        SelectedCountText.Text = count == 0 ? "" : Loc.F("{0} selected", count);
+        BulkEntryButton.IsEnabled = count > 0;
+        BulkShiftButton.IsEnabled = count > 0;
+    }
+
+    private void SelectAllPeople_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var p in _people) p.Selected = true;
+        PeopleGrid.Items.Refresh();
+        UpdateSelectionUi();
+    }
+
+    private void SelectNonePeople_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var p in _people) p.Selected = false;
+        PeopleGrid.Items.Refresh();
+        UpdateSelectionUi();
+    }
+
+    private void SelectDeptBox_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (SelectDeptBox.SelectedItem is not DeptItem { Id: { } id } d) return;
+        foreach (var p in _people) p.Selected = p.Department == d.Name;
+        PeopleGrid.Items.Refresh();
+        UpdateSelectionUi();
+        SelectDeptBox.SelectedIndex = 0;
+    }
+
+    // The checkbox column commits on click without a separate CellEditEnding for CheckBoxColumn in some
+    // themes, so the count is also refreshed from the grid's own edit-ending handler below.
+    private void BulkEntry_Click(object sender, RoutedEventArgs e)
+    {
+        var ids = SelectedPeopleIds();
+        if (ids.Count == 0) { ShowToast("Select one or more people first."); return; }
+
+        var win = new ManualEntryWindow(Array.Empty<PersonChoice>(), null, null, bulkCount: ids.Count) { Owner = this };
+        if (win.ShowDialog() != true) return;
+
+        var names = _store.GetNames();
+        int entries = 0;
+        foreach (var id in ids)
+        {
+            foreach (var (label, at) in new[] { ("log in", win.LogIn), ("log off", win.LogOff) })
+            {
+                if (at is not { } moment) continue;
+                if (_store.AddManual(id, moment, $"{label}: {win.Note}")) entries++;
+            }
+        }
+        AppServices.Log("Info", "Manual", $"Bulk manual entry added for {ids.Count} people ({entries} scan(s) written). Reason: {win.Note}");
+        ShowToast(Loc.F("Added {0} scan(s) for {1} people.", entries, ids.Count));
+        AppServices.RaiseDataChanged();
+    }
+
+    private void BulkShift_Click(object sender, RoutedEventArgs e)
+    {
+        var ids = SelectedPeopleIds();
+        if (ids.Count == 0) { ShowToast("Select one or more people first."); return; }
+
+        var win = new BulkShiftWindow(ids.Count) { Owner = this };
+        if (win.ShowDialog() != true) return;
+
+        var written = _store.AssignShift(ids, win.From, win.To, win.ClearShift ? null : win.ShiftId, win.OnlyShiftDays);
+        AppServices.Log("Info", "Schedule", win.ClearShift
+            ? $"Bulk-cleared shift for {ids.Count} people, {win.From:yyyy-MM-dd} to {win.To:yyyy-MM-dd} ({written} day(s))."
+            : $"Bulk-assigned shift for {ids.Count} people, {win.From:yyyy-MM-dd} to {win.To:yyyy-MM-dd} ({written} day(s)).");
+        ShowToast(Loc.F("Updated {0} day(s) for {1} people.", written, ids.Count));
+        AppServices.RaiseDataChanged();
     }
 
     private async Task SyncNowAsync(bool manual)
@@ -754,6 +841,7 @@ public partial class MainWindow : Window
                      .OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
             _people.Add(new PersonRow { Enroll = id, Name = name, Status = Loc.T(active ? "Active" : "Former"), Department = ctx.DeptName(id) });
         LoadUnnamed();
+        UpdateSelectionUi();
     }
 
     private void LoadUnnamed()
@@ -785,6 +873,11 @@ public partial class MainWindow : Window
     private void PeopleGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
     {
         if (e.EditAction != DataGridEditAction.Commit) return;
+        if (e.Row.Item is PersonRow && e.EditingElement is CheckBox)
+        {
+            Dispatcher.BeginInvoke(UpdateSelectionUi);
+            return;
+        }
         if (e.Row.Item is PersonRow person && e.EditingElement is ComboBox cb)
         {
             var chosen = cb.SelectedItem as string ?? cb.Text ?? "";

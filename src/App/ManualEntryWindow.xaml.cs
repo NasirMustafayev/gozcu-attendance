@@ -16,13 +16,16 @@ public partial class ManualEntryWindow : Window
 
     private readonly List<PersonChoice> _people;
     private readonly bool _editing;
+    private readonly int _bulkCount;
 
     // editing: the person is fixed and the date/time start from the scan being corrected.
     // canOverwrite: offers a checkbox to change the time directly instead of the audited void-and-replace.
-    public ManualEntryWindow(IEnumerable<PersonChoice> people, uint? enroll, DateTime? date, bool editing = false, string? note = null, bool canOverwrite = false)
+    // bulkCount: applying to several people already chosen elsewhere, so the person picker is replaced by a note.
+    public ManualEntryWindow(IEnumerable<PersonChoice> people, uint? enroll, DateTime? date, bool editing = false, string? note = null, bool canOverwrite = false, int bulkCount = 0)
     {
         InitializeComponent();
         _editing = editing;
+        _bulkCount = bulkCount;
         _people = people.ToList();
         PersonBox.ItemsSource = _people;
         if (enroll is { } id) PersonBox.SelectedItem = _people.FirstOrDefault(p => p.Enroll == id);
@@ -44,15 +47,26 @@ public partial class ManualEntryWindow : Window
             OutCol.Width = new GridLength(0);
             if (canOverwrite) OverwriteBox.Visibility = Visibility.Visible;
         }
-        Loaded += (_, _) => (PersonBox.SelectedItem is null ? PersonBox : (UIElement)TimeBox).Focus();
+        else if (bulkCount > 0)
+        {
+            Title = "Add manual entry";
+            HeadText.Text = "Add manual entry";
+            IntroText.Text = Loc.F("This entry will be added for all {0} people you selected. Fill in the log in time, the log off time, or both.", bulkCount);
+            PersonLabel.Text = Loc.T("People");
+            PersonBox.Visibility = Visibility.Collapsed;
+            PersonCountText.Text = Loc.F("{0} people selected", bulkCount);
+            PersonCountText.Visibility = Visibility.Visible;
+        }
+        Loaded += (_, _) => (bulkCount > 0 ? DateBox : PersonBox.SelectedItem is null ? PersonBox : (UIElement)TimeBox).Focus();
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         ErrorText.Text = Loc.T("");
 
-        uint enroll;
-        if (PersonBox.SelectedItem is PersonChoice p) enroll = p.Enroll;
+        uint enroll = 0;
+        if (_bulkCount > 0) { }
+        else if (PersonBox.SelectedItem is PersonChoice p) enroll = p.Enroll;
         else if (!uint.TryParse(new string((PersonBox.Text ?? "").Where(char.IsDigit).ToArray()), out enroll))
         {
             ErrorText.Text = Loc.T("Choose a person from the list, or type their ID number.");

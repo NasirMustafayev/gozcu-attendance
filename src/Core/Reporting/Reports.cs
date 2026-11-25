@@ -65,6 +65,7 @@ public sealed class ReportContext
     public required List<(uint Enroll, string Name, bool Active)> People { get; init; }
     public required ShiftBook Shifts { get; init; }
     public required LeaveBook Leaves { get; init; }
+    public required AlwaysPresentBook AlwaysPresent { get; init; }
     public required Dictionary<DateTime, string> Holidays { get; init; }
     public required List<DepartmentInfo> Departments { get; init; }
     public required Dictionary<uint, int> DepartmentOf { get; init; }
@@ -78,6 +79,7 @@ public sealed class ReportContext
         People = store.GetPeople(),
         Shifts = store.LoadShiftBook(),
         Leaves = store.LoadLeaveBook(),
+        AlwaysPresent = store.LoadAlwaysPresentBook(),
         Holidays = store.GetHolidays(),
         Departments = store.GetDepartments(),
         DepartmentOf = store.GetPersonDepartments(),
@@ -136,6 +138,7 @@ public static class Reports
 
         foreach (var (enroll, name, _) in ctx.ActivePeople)
         {
+            if (ctx.AlwaysPresent.IsAlwaysPresent(enroll)) continue;
             for (var d = from.Date; d <= last; d = d.AddDays(1))
             {
                 if (!ctx.Shifts.IsWorkday(d, enroll, out var shift)) continue;
@@ -153,7 +156,8 @@ public static class Reports
         if (ctx.Holidays.ContainsKey(today)) return new();
         var present = ctx.Scans(today, today.AddDays(1)).Select(r => r.EnrollNumber).ToHashSet();
         return ctx.ActivePeople
-            .Where(p => ctx.Shifts.IsWorkday(today, p.Enroll, out _) && ctx.Leaves.OnLeave(today, p.Enroll) is null && !present.Contains(p.Enroll))
+            .Where(p => !ctx.AlwaysPresent.IsAlwaysPresent(p.Enroll) &&
+                        ctx.Shifts.IsWorkday(today, p.Enroll, out _) && ctx.Leaves.OnLeave(today, p.Enroll) is null && !present.Contains(p.Enroll))
             .Select(p => (p.Enroll, p.Name, ctx.Shifts.For(today, p.Enroll)?.Name ?? ""))
             .OrderBy(p => p.Name)
             .ToList();
@@ -341,11 +345,36 @@ public static class Reports
 
     // ---------- today, for the dashboard cards ----------
 
+    // A row standing in for a real scan, for a person an admin has marked as always present.
+    // Used only for a day they have no real scan, so a real scan always wins.
+    private static DailyRow AlwaysPresentRow(ReportContext ctx, DateTime day, uint enroll, AlwaysPresentEntry entry)
+    {
+        var shift = ctx.Shifts.For(day, enroll);
+        var first = day.Date + entry.FirstIn;
+        var last = day.Date + entry.LastOut;
+        return new DailyRow(day.Date, enroll, ctx.NameOf(enroll), shift?.Name ?? "", first, last, 0, last - first, 0, 0, 0);
+    }
+
+    // The daily rows for today, plus a synthetic row for every active always-present person
+    // who has no real scan yet, so they show as present without ever badging in.
+    private static List<DailyRow> WithAlwaysPresent(ReportContext ctx, List<DailyRow> daily, DateTime today)
+    {
+        var present = daily.Select(r => r.Enroll).ToHashSet();
+        foreach (var (enroll, _, _) in ctx.ActivePeople)
+        {
+            if (present.Contains(enroll)) continue;
+            var entry = ctx.AlwaysPresent.For(enroll);
+            if (entry is null) continue;
+            daily.Add(AlwaysPresentRow(ctx, today, enroll, entry));
+        }
+        return daily;
+    }
+
     public static ReportTable Today(ReportContext ctx, string kind)
     {
         var today = DateTime.Today;
         var scans = ctx.Scans(today, today.AddDays(1));
-        var daily = ctx.Daily(scans);
+        var daily = WithAlwaysPresent(ctx, ctx.Daily(scans), today);
         var subtitle = today.ToString("dddd, d MMMM yyyy", CultureInfo.InvariantCulture) + Scope(ctx);
 
         switch (kind)
@@ -381,7 +410,7 @@ public static class Reports
 
             case "notin":
             {
-                var present = scans.Select(r => r.EnrollNumber).ToHashSet();
+                var present = daily.Select(r => r.Enroll).ToHashSet();
                 var table = new ReportTable { Title = "Expected today, not in yet", Subtitle = subtitle, Headers = { "ID", "Name", "Department", "Shift", "Status" } };
                 int notIn = 0, away = 0;
                 foreach (var p in ctx.ActivePeople.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))

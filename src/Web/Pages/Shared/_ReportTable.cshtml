@@ -8,18 +8,28 @@
     var canEdit = User.IsInRole(AttendanceStore.RoleAdmin) || User.IsInRole(AttendanceStore.RoleEditor);
     var canMarkFull = canEdit && Model.MarkFullKeys.Any(k => k is not null);
     var canEditDay = canEdit && Model.EditKeys.Any(k => k is not null);
+    var canBulk = canEdit && idCol >= 0;
 }
 <div class="row no-print" style="margin-bottom:12px">
     <label class="f">@WebApp.T("Filter")<input type="search" data-filter="#report-table" style="width:220px"></label>
     <span class="spacer"></span>
+    @if (canBulk)
+    {
+        <button class="btn" type="submit" form="bulk-entry-form">@WebApp.T("Bulk manual entry…")</button>
+    }
     <a class="btn" href="@(query)@(sep)handler=Export&fmt=xlsx">@WebApp.T("Excel")</a>
     <a class="btn" href="@(query)@(sep)handler=Export&fmt=csv">@WebApp.T("CSV")</a>
     <button class="btn" type="button" data-print>@WebApp.T("Print")</button>
 </div>
+<form id="bulk-entry-form" method="get" action="/BulkEntry"></form>
 <div class="card flush">
     <div class="table-wrap">
         <table id="report-table">
-            <thead><tr>@foreach (var h in Model.Headers) { <th>@h</th> }@if (canMarkFull || canEditDay) { <th class="no-print"></th> }</tr></thead>
+            <thead><tr>
+                @if (canBulk) { <th class="no-print"><input type="checkbox" data-select-all=".bulk-sel"></th> }
+                @foreach (var h in Model.Headers) { <th>@h</th> }
+                @if (canMarkFull || canEditDay) { <th class="no-print"></th> }
+            </tr></thead>
             <tbody>
                 @for (var i = 0; i < Model.Rows.Count; i++)
                 {
@@ -29,6 +39,15 @@
                     var markKey = Model.MarkFullKeyOf(i);
                     var editKey = Model.EditKeyOf(i);
                     <tr data-href="@link" class="@(missing ? "row-missing" : "")">
+                        @if (canBulk)
+                        {
+                            <td class="no-print" onclick="event.stopPropagation()">
+                                @if (idCol < r.Length && r[idCol].Length > 0)
+                                {
+                                    <input type="checkbox" class="bulk-sel" name="id" value="@r[idCol]" form="bulk-entry-form">
+                                }
+                            </td>
+                        }
                         @for (var c = 0; c < r.Length; c++)
                         {
                             if (c == nameCol && idCol >= 0 && idCol < r.Length && uint.TryParse(r[idCol], out var pid) && r[c].Length > 0)
