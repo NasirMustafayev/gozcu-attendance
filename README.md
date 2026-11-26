@@ -27,7 +27,7 @@ frame handling is caught before it ever reaches the terminal.
 | `src/Core` | Device protocol and sync, SQLite storage, PDKS import, shift and report logic, English/Azerbaijani text |
 | `src/App` | Windows desktop app (WPF): collects scans from the device, dashboard, attendance, schedule, reports, people |
 | `src/Web` | Web app (ASP.NET Core): the same screens in a browser, sign-in with roles, shares the desktop app's database |
-| `src/Cli` | `gozcu` command-line tool: status, pull, reports, PDKS import, sync requests, web users, database check |
+| `src/Cli` | `gozcu` command-line tool: status, pull, reports, PDKS import, sync requests, web users, devices, database check |
 
 ## Build
 
@@ -47,6 +47,11 @@ dotnet publish src/Web -c Release -r win-x64 --self-contained true -p:PublishSin
 - Web app setup, running it as a Windows service and reaching it from other PCs: see [WEB-SETUP.md](WEB-SETUP.md).
 - `setup-web-service.ps1` (run as administrator) installs the web app as a service, opens port 5080 on private
   networks and stops the PC from sleeping.
+- **Multiple terminals**: any number of devices can be added (desktop app Settings → "Manage devices…", or the web
+  app's admin Settings page), all sharing the same database. Each one syncs independently, so one unreachable
+  terminal never blocks the others, and scans stay tagged by the device they came from. The app still needs a
+  network path to each terminal's IP:port to reach it — devices at another site need a VPN or tunnel, same as
+  reaching the web app remotely.
 
 Reading from the device never removes scans from it unless "take over from the original software" is turned on,
 so PDKS can keep running alongside. The PDKS database is only ever read.
@@ -70,23 +75,23 @@ Web app (same data, in a browser):
 
 ```mermaid
 flowchart LR
-    T["Face / fingerprint terminal"]
+    T["Face / fingerprint terminals<br/>one or many, any location reachable on the network"]
     PDKS["Original Gozcu PDKS software"]
     PDB[("PDKS database")]
 
     subgraph CORE["Core library (C#, .NET 8)"]
         P["Device protocol<br/>reverse-engineered TCP frames"]
-        S["DeviceSync<br/>lock, pull scans, ack, unlock, set clock"]
+        S["DeviceSync<br/>per device: lock, pull scans, ack, unlock, set clock"]
         I["PdksImporter<br/>read-only import"]
         L["Shifts and reports logic"]
     end
 
-    DB[("SQLite<br/>attendance.db")]
-    APP["Desktop app (WPF)<br/>tray, dashboard, schedule, reports"]
-    WEB["Web app (ASP.NET Core)<br/>sign-in with roles"]
-    CLI["gozcu CLI<br/>status, pull, reports, selftest"]
+    DB[("SQLite<br/>attendance.db<br/>devices table + scans tagged by device")]
+    APP["Desktop app (WPF)<br/>tray, dashboard, schedule, reports, device management"]
+    WEB["Web app (ASP.NET Core)<br/>sign-in with roles, device management"]
+    CLI["gozcu CLI<br/>status, pull, reports, devices, selftest"]
 
-    T <-->|"TCP"| P
+    T <-->|"TCP, per device"| P
     P --> S
     S --> DB
     PDKS --> PDB
