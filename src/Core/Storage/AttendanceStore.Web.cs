@@ -79,14 +79,18 @@ public sealed partial class AttendanceStore
         return v is { Length: 2 } && long.TryParse(v[0], out var id) ? (id, v[1]) : null;
     }
 
+    // Keyed by request id (not a single shared slot) so one page's wait for its own request is never
+    // mistaken for another: two tabs, or two clicks in a row, must each get their own answer back.
     public void SaveSyncResult(long id, bool ok, int added, string message) =>
-        SetState("sync_result", $"{id}\t{(ok ? 1 : 0)}\t{added}\t{message.Replace('\t', ' ')}");
+        SetState($"sync_result:{id}", $"{(ok ? 1 : 0)}\t{added}\t{message.Replace('\t', ' ')}");
 
-    public (long Id, bool Ok, int Added, string Message)? GetSyncResult()
+    public (bool Ok, int Added, string Message)? GetSyncResult(long id)
     {
-        var v = GetState("sync_result")?.Split('\t');
-        return v is { Length: 4 } && long.TryParse(v[0], out var id) ? (id, v[1] == "1", int.TryParse(v[2], out var n) ? n : 0, v[3]) : null;
+        var v = GetState($"sync_result:{id}")?.Split('\t');
+        return v is { Length: 3 } ? (v[0] == "1", int.TryParse(v[1], out var n) ? n : 0, v[2]) : null;
     }
+
+    public void ClearSyncResult(long id) => SetState($"sync_result:{id}", "");
 
     // ---------- web accounts ----------
 

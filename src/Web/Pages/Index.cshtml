@@ -119,8 +119,9 @@
             while (DateTime.UtcNow < until)
             {
                 await Task.Delay(500);
-                if (Store.GetSyncResult() is { } r && r.Id == id)
+                if (Store.GetSyncResult(id) is { } r)
                 {
+                    Store.ClearSyncResult(id);
                     if (r.Ok) Flash = F("Synced. {0} new scan(s).", r.Added);
                     else FlashError = F("Sync failed: {0}", r.Message);
                     return RedirectToPage();

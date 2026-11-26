@@ -270,7 +270,7 @@ public static class Program
                 for (int i = 0; i < 120; i++)
                 {
                     Thread.Sleep(500);
-                    if (store.GetSyncResult() is { } r && r.Id == id)
+                    if (store.GetSyncResult(id) is { } r)
                     {
                         Console.WriteLine(r.Ok ? $"Synced by the desktop app: {r.Added} new scan(s)." : $"Sync failed: {r.Message}");
                         return r.Ok ? 0 : 1;
