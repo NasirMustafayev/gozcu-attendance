@@ -40,12 +40,11 @@ public partial class MainWindow : Window
     private bool _exiting;
     private bool _startHidden;
     private bool? _online;
-    private int _pending;
-    private string _serial = "";
     private DateTime? _lastSync;
 
     public MainWindow(bool startMinimized)
     {
+        _store.MigrateLegacyDevice(_settings.DeviceIp, _settings.DevicePort);
         _sync = new DeviceSync(_settings, _store);
         AppServices.Settings = _settings;
         AppServices.Store = _store;
@@ -471,47 +470,55 @@ public partial class MainWindow : Window
     private async Task SyncNowAsync(bool manual)
     {
         if (_busy) return;
+        if (_store.GetDevices().Count == 0)
+        {
+            DeviceError.Text = Loc.T("No device set. Add one in Settings.");
+            if (manual) ShowToast("No device set. Add one in Settings.");
+            return;
+        }
         _busy = true;
         SyncButton.IsEnabled = false;
         SetStatus("Syncing…", "Warn");
         try
         {
-            var r = await Task.Run(() => _sync.PullOnce(_settings.AcknowledgeScans, force: manual));
-            _serial = r.Serial;
-            _pending = r.Pending;
+            var results = await Task.Run(() => _sync.PullAll(_settings.AcknowledgeScans, force: manual));
             _lastSync = DateTime.Now;
-            DeviceError.Text = "";
-            SetStatus("Connected", "Good");
+            var anyOnline = results.Any(r => r.Ok);
+            var errors = results.Where(r => !r.Ok).ToList();
+            DeviceError.Text = errors.Count == 0 ? "" :
+                string.Join("  ·  ", errors.Select(e => Loc.F("{0}: {1}", e.DeviceName, e.Error)));
+            SetStatus(anyOnline ? (errors.Count > 0 ? "Partly offline" : "Connected") : "Offline", anyOnline ? (errors.Count > 0 ? "Warn" : "Good") : "Bad");
 
-            if (r.ClockSet) AppServices.Log("Info", "Device", "Device clock set to this PC's time.");
-            if (_online == false) AppServices.Log("Info", "Device", "Device reachable again.");
-            _online = true;
+            foreach (var e in errors)
+                if (_online != false) AppServices.Log("Warn", "Device", $"{e.DeviceName} unreachable: {e.Error}");
+            _online = anyOnline;
 
-            if (r.Added.Count > 0)
+            var added = results.Where(r => r.Result is not null).SelectMany(r => r.Result!.Added).ToList();
+            foreach (var r in results.Where(r => r.Result?.ClockSet == true))
+                AppServices.Log("Info", "Device", $"{r.DeviceName} clock set to this PC's time.");
+
+            if (added.Count > 0)
             {
                 var names = _store.GetNames();
-                var last = r.Added[^1];
+                var last = added[^1];
                 var who = names.TryGetValue(last.EnrollNumber, out var n) ? n : $"ID {last.EnrollNumber}";
-                ShowToast(r.Added.Count == 1
+                ShowToast(added.Count == 1
                     ? $"{who} · {last.VerifyName} · {last.Timestamp:HH:mm}"
-                    : Loc.F("{0} new scans, latest {1} at {2:HH:mm}", r.Added.Count, who, last.Timestamp));
-                AppServices.Log("Info", "Sync", $"Collected {r.Added.Count} new scan(s) from the device" + (r.Acknowledged ? " and cleared them from its queue." : "."));
+                    : Loc.F("{0} new scans, latest {1} at {2:HH:mm}", added.Count, who, last.Timestamp));
+                var acked = results.Any(r => r.Result?.Acknowledged == true);
+                AppServices.Log("Info", "Sync", $"Collected {added.Count} new scan(s)" + (acked ? " and cleared them from the device queue(s)." : "."));
                 LoadAttendance();
                 LoadUnnamed();
                 AppServices.RaiseDataChanged();
             }
-            else if (manual)
+            else if (manual && errors.Count == 0)
             {
                 ShowToast("Up to date. Nothing new on the device.");
             }
-        }
-        catch (Exception ex)
-        {
-            SetStatus("Offline", "Bad");
-            DeviceError.Text = Loc.F("Could not reach the device: {0}", ex.GetBaseException().Message);
-            if (_online != false) AppServices.Log("Warn", "Device", "Device unreachable: " + ex.GetBaseException().Message);
-            _online = false;
-            if (manual) ShowToast("Sync failed. Check the device and network.");
+            else if (manual)
+            {
+                ShowToast("Sync failed. Check the device and network.");
+            }
         }
         finally
         {
@@ -551,7 +558,23 @@ public partial class MainWindow : Window
         LateValue.Text = rows.Count(r => r.LateMinutes > 0).ToString();
         EarlyValue.Text = rows.Count(r => r.EarlyLeaveMinutes > 0).ToString();
         LateHint.Text = ctx.Shifts.ShiftCount > 0 ? Loc.T("past the grace time") : Loc.F("after {0}", _settings.WorkStart.ToString(@"hh\:mm"));
-        PendingValue.Text = _pending.ToString();
+
+        var devices = _store.GetDevices();
+        var deviceRows = devices.Select(d =>
+        {
+            var status = _store.GetDeviceStatus(d.Id);
+            return new DeviceRow(
+                d.Name + (d.Location.Length > 0 ? $" ({d.Location})" : ""),
+                $"{d.Ip}:{d.Port}",
+                status is { Serial.Length: > 0 } ? status.Serial : "—",
+                status?.CheckedAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "—",
+                status?.Online == true ? Loc.T("Online") : Loc.T("Offline"),
+                (Brush)FindResource(status?.Online == true ? "Good" : "Bad"),
+                status is { Online: false, Error.Length: > 0 } ? status.Error : "");
+        }).ToList();
+        PendingValue.Text = devices.Select(d => _store.GetDeviceStatus(d.Id)?.Pending ?? 0).Sum().ToString();
+        DeviceList.ItemsSource = deviceRows;
+        DeviceListEmpty.Text = devices.Count == 0 ? Loc.T("No device set — add one in Settings.") : "";
 
         var notIn = Reports.NotInToday(ctx);
         NotInValue.Text = notIn.Count.ToString();
@@ -560,11 +583,6 @@ public partial class MainWindow : Window
             ? Loc.T("No schedule yet. Import from the original software (Settings) or assign shifts in Schedule.")
             : notIn.Count == 0 ? Loc.T("Everyone expected today has scanned in.") : "";
 
-        DeviceAddress.Text = string.IsNullOrWhiteSpace(_settings.DeviceIp)
-            ? Loc.T("No device set — enter its address in Settings")
-            : $"{_settings.DeviceIp}:{_settings.DevicePort}";
-        DeviceSerial.Text = _serial.Length > 0 ? _serial : "—";
-        DeviceLastSync.Text = _lastSync is { } t ? t.ToString("HH:mm:ss", CultureInfo.InvariantCulture) : "—";
         SidebarSync.Text = _lastSync is { } s ? Loc.F("Last sync {0:HH:mm:ss}", s) : Loc.T("Not synced yet");
 
         FeedList.ItemsSource = _store.GetLatest(60).Where(r => ctx.Allows(r.EnrollNumber)).Take(12).Select(r => ToFeed(r, ctx.Names, today)).ToList();
@@ -953,8 +971,7 @@ public partial class MainWindow : Window
 
     private void FillSettingsFields()
     {
-        SetIp.Text = _settings.DeviceIp;
-        SetPort.Text = _settings.DevicePort.ToString();
+        RefreshDeviceCount();
         SetInterval.Text = _settings.SyncIntervalSeconds.ToString();
         SetStart.Text = _settings.WorkStart.ToString(@"hh\:mm");
         SetEnd.Text = _settings.WorkEnd.ToString(@"hh\:mm");
@@ -968,6 +985,22 @@ public partial class MainWindow : Window
         SetImportMinutes.Text = _settings.AutoImportMinutes.ToString();
         DataFolder.Text = Loc.F("Data folder: {0}", AppPaths.DataDir);
         RefreshSettingsInfo();
+    }
+
+    private void RefreshDeviceCount()
+    {
+        var devices = _store.GetDevices();
+        DeviceCountText.Text = devices.Count == 0
+            ? Loc.T("No devices configured.")
+            : Loc.F(devices.Count == 1 ? "{0} device configured." : "{0} devices configured.", devices.Count);
+    }
+
+    private void ManageDevices_Click(object sender, RoutedEventArgs e)
+    {
+        var win = new DevicesWindow { Owner = this };
+        win.ShowDialog();
+        RefreshDeviceCount();
+        RefreshDashboard();
     }
 
     private void RefreshSettingsInfo()
@@ -984,15 +1017,13 @@ public partial class MainWindow : Window
 
     private void SaveSettings_Click(object sender, RoutedEventArgs e)
     {
-        if (!System.Net.IPAddress.TryParse(SetIp.Text.Trim(), out _)
-            || !int.TryParse(SetPort.Text.Trim(), out var port) || port is < 1 or > 65535
-            || !int.TryParse(SetInterval.Text.Trim(), out var interval) || interval < 5
+        if (!int.TryParse(SetInterval.Text.Trim(), out var interval) || interval < 5
             || !int.TryParse(SetLogDays.Text.Trim(), out var logDays) || logDays is < 7 or > 3650
             || !int.TryParse(SetImportMinutes.Text.Trim(), out var importMin) || importMin is < 1 or > 1440
             || !TimeSpan.TryParseExact(SetStart.Text.Trim(), @"h\:mm", CultureInfo.InvariantCulture, out var start)
             || !TimeSpan.TryParseExact(SetEnd.Text.Trim(), @"h\:mm", CultureInfo.InvariantCulture, out var end))
         {
-            ShowToast("Check the values: valid IP, port, interval of 5+ seconds, log days 7+, times like 09:00.");
+            ShowToast("Check the values: interval of 5+ seconds, log days 7+, times like 09:00.");
             return;
         }
 
@@ -1006,8 +1037,6 @@ public partial class MainWindow : Window
             ack = false;
         }
 
-        _settings.DeviceIp = SetIp.Text.Trim();
-        _settings.DevicePort = port;
         _settings.SyncIntervalSeconds = interval;
         _settings.WorkStart = start;
         _settings.WorkEnd = end;
@@ -1029,7 +1058,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        AppServices.Log("Info", "Settings", $"Settings saved (device {_settings.DeviceIp}:{_settings.DevicePort}, every {interval}s, take-over {(ack ? "on" : "off")}).");
+        AppServices.Log("Info", "Settings", $"Settings saved (sync every {interval}s, take-over {(ack ? "on" : "off")}).");
         ApplyTimer();
         AppServices.RaiseDataChanged();
         ShowToast("Settings saved.");
@@ -1047,17 +1076,25 @@ public partial class MainWindow : Window
 
     private async void SetClock_Click(object sender, RoutedEventArgs e)
     {
-        try
+        var devices = _store.GetDevices().Where(d => d.Enabled).ToList();
+        if (devices.Count == 0) { ShowToast("No device set. Add one in Settings."); return; }
+
+        int ok = 0;
+        foreach (var d in devices)
         {
-            var ok = await Task.Run(() => _sync.SetClock());
-            AppServices.Log(ok ? "Info" : "Warn", "Device", ok ? "Device clock set to this PC's time." : "The device did not confirm the new time.");
-            ShowToast(ok ? Loc.F("Device clock set to {0:HH:mm:ss}.", DateTime.Now) : "The device did not confirm the new time.");
+            try
+            {
+                if (await Task.Run(() => _sync.SetClock(d.Id))) { ok++; AppServices.Log("Info", "Device", $"{d.Name} clock set to this PC's time."); }
+                else AppServices.Log("Warn", "Device", $"{d.Name} did not confirm the new time.");
+            }
+            catch (Exception ex)
+            {
+                AppServices.Log("Error", "Device", $"Could not set the clock on {d.Name}: " + ex.GetBaseException().Message);
+            }
         }
-        catch (Exception ex)
-        {
-            AppServices.Log("Error", "Device", "Could not set the clock: " + ex.GetBaseException().Message);
-            ShowToast(Loc.F("Could not set the clock: {0}", ex.GetBaseException().Message));
-        }
+        ShowToast(ok == devices.Count
+            ? Loc.F("Clock set on {0} device(s) to {1:HH:mm:ss}.", ok, DateTime.Now)
+            : Loc.F("Clock set on {0} of {1} device(s).", ok, devices.Count));
     }
 
     private async void ImportPdks_Click(object sender, RoutedEventArgs e)

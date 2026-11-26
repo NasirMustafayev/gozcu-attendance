@@ -103,6 +103,7 @@ public sealed partial class AttendanceStore
         EnsureColumn(conn, "leaves", "source", "TEXT NOT NULL DEFAULT 'pdks'");
         EnsureColumn(conn, "shifts", "break_min", "INTEGER NOT NULL DEFAULT 0");
         EnsureWebTables(conn);
+        EnsureDevicesTable(conn);
 
         // Classic rollback journal: both apps can still share the file (each waits up to 5 s for the other), and
         // the database stays one self-contained file. WAL mode was tried and is turned back off here.

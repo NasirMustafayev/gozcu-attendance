@@ -63,18 +63,6 @@ public sealed partial class AttendanceStore
         cmd.ExecuteNonQuery();
     }
 
-    public void SaveDeviceStatus(DeviceStatus s) =>
-        SetState("device_status", string.Join('\t', s.Online ? "1" : "0", s.CheckedAt.ToString(Fmt, CultureInfo.InvariantCulture),
-            s.Serial, s.Pending.ToString(CultureInfo.InvariantCulture), s.Error.Replace('\t', ' ')));
-
-    public DeviceStatus? GetDeviceStatus()
-    {
-        var v = GetState("device_status")?.Split('\t');
-        if (v is null || v.Length < 5) return null;
-        return new DeviceStatus(v[0] == "1", DateTime.ParseExact(v[1], Fmt, CultureInfo.InvariantCulture), v[2],
-            int.TryParse(v[3], out var p) ? p : 0, v[4]);
-    }
-
     // ---------- sync requests from the web app ----------
 
     // The web app asks; the desktop app (which owns the device connection) does the sync and answers.

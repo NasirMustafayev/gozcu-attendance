@@ -133,20 +133,30 @@
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
                                 <Grid>
-                                    <TextBlock Text="Device" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
-                                    <TextBlock x:Name="DeviceAddress" Style="{StaticResource Label}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Devices" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                                    <TextBlock Text="Manage in Settings" Style="{StaticResource Label}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                 </Grid>
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="Serial number" Style="{StaticResource Label}"/>
-                                        <TextBlock x:Name="DeviceSerial" Text="—" FontSize="14" Foreground="{StaticResource Ink}" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="Last sync" Style="{StaticResource Label}"/>
-                                        <TextBlock x:Name="DeviceLastSync" Text="—" FontSize="14" Foreground="{StaticResource Ink}" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </Grid>
+                                <ItemsControl x:Name="DeviceList" Margin="0,12,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,10">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource Ink}"/>
+                                                    <TextBlock Style="{StaticResource Label}" FontSize="12">
+                                                        <Run Text="{Binding Address, Mode=OneWay}"/> · <Run Text="{Binding Serial, Mode=OneWay}"/>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                    <TextBlock Text="{Binding Status}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"
+                                                               Foreground="{Binding StatusBrush}"/>
+                                                    <TextBlock Text="{Binding LastCheck}" Style="{StaticResource Label}" FontSize="11" HorizontalAlignment="Right"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock x:Name="DeviceListEmpty" Style="{StaticResource Label}" FontSize="13" TextWrapping="Wrap"/>
                                 <TextBlock x:Name="DeviceError" Foreground="{StaticResource Bad}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
                                     <Button x:Name="SyncButton" Content="Sync now" Style="{StaticResource PrimaryButton}" Click="SyncButton_Click" ToolTip="F5"/>
@@ -375,17 +385,10 @@
                         <StackPanel>
                             <TextBlock Text="Device and sync" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}" Margin="0,0,0,14"/>
                             <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="Device IP address" Style="{StaticResource Label}" Margin="0,0,0,4"/>
-                                    <TextBox x:Name="SetIp"/>
-                                    <TextBlock Text="The terminal's address on your local network, e.g. 192.168.1.50" Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Port" Style="{StaticResource Label}" Margin="0,0,0,4"/>
-                                    <TextBox x:Name="SetPort"/>
-                                </StackPanel>
+                                <TextBlock x:Name="DeviceCountText" Text="No devices configured." Style="{StaticResource Label}" FontSize="13" VerticalAlignment="Center"/>
+                                <Button Content="Manage devices…" Style="{StaticResource GhostButton}" HorizontalAlignment="Right" Click="ManageDevices_Click"/>
                             </Grid>
+                            <TextBlock Text="A device can be added, edited or removed from this list; each terminal syncs independently and its scans are tagged with which one they came from." Style="{StaticResource Label}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
                             <Grid Margin="0,14,0,0">
                                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
                                 <StackPanel>

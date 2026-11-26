@@ -8,7 +8,7 @@
     var scans = ctx.Scans(today, today.AddDays(1));
     var rows = ctx.Daily(scans);
     var notIn = Reports.NotInToday(ctx);
-    var status = Store.GetDeviceStatus();
+    var devices = Store.GetDevices();
     var latest = Store.GetLatest(60).Where(r => ctx.Allows(r.EnrollNumber)).Take(12).ToList();
 
     static string Pill(GozcuStandalone.Device.AttendanceRecord r) => r.IsManual ? "manual" : r.VerifyCode switch { 5 => "face", 1 => "finger", _ => "" };
@@ -34,21 +34,32 @@
             <div class="label">@T("SCANS")</div><div class="value">@scans.Count</div><div class="hint">@T("today")</div>
         </a>
         <div class="card stat">
-            <div class="label">@T("ON DEVICE")</div><div class="value c-accent">@(status?.Pending ?? 0)</div><div class="hint">@T("from the desktop app")</div>
+            <div class="label">@T("ON DEVICE")</div><div class="value c-accent">@devices.Sum(d => Store.GetDeviceStatus(d.Id)?.Pending ?? 0)</div><div class="hint">@T("from the desktop app")</div>
         </div>
     </div>
 
     <div class="grid two">
         <div class="grid">
             <div class="card">
-                <div class="row"><h2>@T("Device")</h2><span class="spacer"></span><span class="muted">@(string.IsNullOrWhiteSpace(Settings.DeviceIp) ? T("No device set") : $"{Settings.DeviceIp}:{Settings.DevicePort}")</span></div>
-                <div class="kv">
-                    <div><div class="k">@T("Serial number")</div><div>@(status is { Serial.Length: > 0 } ? status.Serial : "—")</div></div>
-                    <div><div class="k">@T("Last check")</div><div>@(status?.CheckedAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "—")</div></div>
-                </div>
-                @if (status is { Online: false, Error.Length: > 0 })
+                <h2>@T("Devices")</h2>
+                @foreach (var d in devices)
                 {
-                    <div class="error-text">@Loc.F("Could not reach the device: {0}", status.Error)</div>
+                    var status = Store.GetDeviceStatus(d.Id);
+                    <div class="list-row">
+                        <div>
+                            <div style="font-weight:600">@d.Name@(d.Location.Length > 0 ? $" ({d.Location})" : "")</div>
+                            <div class="muted" style="font-size:12px">@d.Ip:@d.Port · @(status is { Serial.Length: > 0 } ? status.Serial : "—")</div>
+                        </div>
+                        <span class="muted">@(status?.Online == true ? T("Online") : T("Offline")) · @(status?.CheckedAt.ToString("HH:mm:ss", CultureInfo.InvariantCulture) ?? "—")</span>
+                    </div>
+                    @if (status is { Online: false, Error.Length: > 0 })
+                    {
+                        <div class="error-text">@Loc.F("{0}: {1}", d.Name, status.Error)</div>
+                    }
+                }
+                @if (devices.Count == 0)
+                {
+                    <div class="muted">@T("No device set. Add one on the Settings page.")</div>
                 }
                 <form method="post" asp-page-handler="Sync" data-busy="@T("Syncing…")" style="margin-top:14px">
                     <button class="btn primary" type="submit">@T("Sync now")</button>
@@ -97,9 +108,11 @@
     // Only when the desktop app is not running does the web app talk to the device itself.
     public async Task<IActionResult> OnPostSyncAsync()
     {
-        var status = Store.GetDeviceStatus();
+        var devices = Store.GetDevices();
+        var latestStatus = devices.Select(d => Store.GetDeviceStatus(d.Id)).Where(s => s is not null).Select(s => s!)
+            .OrderByDescending(s => s.CheckedAt).FirstOrDefault();
         var staleAfter = TimeSpan.FromSeconds(Math.Max(300, Settings.SyncIntervalSeconds * 3));
-        if (status is not null && DateTime.Now - status.CheckedAt < staleAfter)
+        if (latestStatus is not null && DateTime.Now - latestStatus.CheckedAt < staleAfter)
         {
             var id = Store.RequestSync(Who);
             var until = DateTime.UtcNow.AddSeconds(60);
@@ -117,16 +130,19 @@
             return RedirectToPage();
         }
 
+        if (devices.Count == 0) { FlashError = T("No device set. Add one on the Settings page."); return RedirectToPage(); }
         if (!await DirectSync.WaitAsync(0)) { FlashError = T("Another sync is already running."); return RedirectToPage(); }
         try
         {
             var before = Store.Count();
-            await Task.Run(() => new DeviceSync(Settings, Store).PullOnce(Settings.AcknowledgeScans, force: true));
+            var results = await Task.Run(() => new DeviceSync(Settings, Store).PullAll(Settings.AcknowledgeScans, force: true));
             if (Settings.AutoImportFromPdks)
                 await Task.Run(() => PdksImporter.Import(Settings, Store, recentDays: 3, includeSchedule: false));
             var added = Store.Count() - before;
+            var failed = results.Where(r => !r.Ok).ToList();
             Log("Info", "Sync", $"Synced directly from the web (desktop app not running): {added} new scan(s).");
             Flash = F("Synced. {0} new scan(s).", added) + " " + T("The desktop app is not running, so the web app synced with the device directly.");
+            if (failed.Count > 0) FlashError = string.Join("  ", failed.Select(f => F("{0}: {1}", f.DeviceName, f.Error)));
         }
         catch (Exception ex)
         {

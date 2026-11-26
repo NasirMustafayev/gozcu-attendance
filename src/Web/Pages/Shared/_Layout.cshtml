@@ -5,9 +5,12 @@
     var title = ViewData["Title"] as string ?? "";
     var bare = ViewData["Bare"] is true;
     var signedIn = User.Identity?.IsAuthenticated == true;
-    var status = signedIn ? Store.GetDeviceStatus() : null;
+    var devices = signedIn ? Store.GetDevices() : new List<DeviceConfig>();
+    var statuses = devices.Select(d => Store.GetDeviceStatus(d.Id)).Where(s => s is not null).Select(s => s!).ToList();
+    var status = statuses.OrderByDescending(s => s.CheckedAt).FirstOrDefault();
     var staleAfter = TimeSpan.FromSeconds(Math.Max(300, Settings.SyncIntervalSeconds * 3));
     var stale = status is null || DateTime.Now - status.CheckedAt > staleAfter;
+    var anyOnline = statuses.Any(s => s.Online);
     var departments = signedIn ? Store.GetDepartments() : new List<DepartmentInfo>();
     int? dept = int.TryParse(Context.Request.Cookies["dept"], out var dd) ? dd : null;
     var flash = TempData["flash"] as string;
@@ -75,8 +78,8 @@ else
             </form>
             <div class="status-box" title="@WebApp.T("Device status comes from the desktop app.")">
                 <div class="status-line">
-                    <span class="dot @(stale ? "warn" : status!.Online ? "good" : "bad")"></span>
-                    <span>@(stale ? WebApp.T("Desktop app not seen") : status!.Online ? WebApp.T("Connected") : WebApp.T("Offline"))</span>
+                    <span class="dot @(stale ? "warn" : anyOnline ? "good" : "bad")"></span>
+                    <span>@(stale ? WebApp.T("Desktop app not seen") : anyOnline ? WebApp.T("Connected") : WebApp.T("Offline"))</span>
                 </div>
                 <div class="status-sub">@(status is null ? WebApp.T("Not synced yet") : WebApp.F("Last sync {0}", status.CheckedAt.ToString("HH:mm", CultureInfo.InvariantCulture)))</div>
             </div>

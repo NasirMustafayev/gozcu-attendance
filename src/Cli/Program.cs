@@ -12,22 +12,34 @@ public static class Program
         var sync = new DeviceSync(settings, store);
         var trace = args.Contains("--trace");
         var ack = args.Contains("--ack");
+        store.MigrateLegacyDevice(settings.DeviceIp, settings.DevicePort);
 
         switch (args.FirstOrDefault())
         {
+            case "devices":
+                return Devices(args, store);
+
             case "status":
             {
-                var (serial, pending) = sync.ReadStatus(trace);
-                Console.WriteLine($"Serial : {serial}\nPending: {pending}");
+                foreach (var d in SelectedDevices(args, store))
+                {
+                    try
+                    {
+                        var (serial, pending) = GozcuStandalone.DeviceSync.TestConnect(d.Ip, d.Port, trace);
+                        Console.WriteLine($"{d.Name} ({d.Ip}:{d.Port})\n  Serial : {serial}\n  Pending: {pending}");
+                    }
+                    catch (Exception ex) { Console.WriteLine($"{d.Name} ({d.Ip}:{d.Port})\n  Error  : {ex.GetBaseException().Message}"); }
+                }
                 return 0;
             }
 
             case "raw":
             {
-                using var dev = new GozcuStandalone.Device.DeviceClient(settings.DeviceIp, settings.DevicePort) { Trace = true };
+                var device = SelectedDevices(args, store).FirstOrDefault() ?? throw new InvalidOperationException("No device configured. Use `gozcu devices add`.");
+                using var dev = new GozcuStandalone.Device.DeviceClient(device.Ip, device.Port) { Trace = true };
                 dev.Connect();
                 dev.Handshake();
-                foreach (var spec in args.Skip(1))
+                foreach (var spec in args.Skip(1).Where(a => !a.StartsWith("--")))
                 {
                     var p = spec.Split(':');
                     dev.Exchange(GozcuStandalone.Device.Protocol.Request(Convert.ToUInt16(p[0], 16), p.Length > 1 ? Convert.ToByte(p[1], 16) : (byte)0, p.Length > 2 ? Convert.ToByte(p[2], 16) : (byte)0), 60);
@@ -38,7 +50,8 @@ public static class Program
 
             case "reset":
             {
-                using var dev = new GozcuStandalone.Device.DeviceClient(settings.DeviceIp, settings.DevicePort) { Trace = true };
+                var device = SelectedDevices(args, store).FirstOrDefault() ?? throw new InvalidOperationException("No device configured. Use `gozcu devices add`.");
+                using var dev = new GozcuStandalone.Device.DeviceClient(device.Ip, device.Port) { Trace = true };
                 dev.Connect();
                 dev.Handshake();
                 var got = dev.FetchPending(dev.GetPendingCount()); Console.WriteLine("fetched " + got.Count);
@@ -48,11 +61,11 @@ public static class Program
             }
 
             case "pull":
-                PullOnce(sync, store, ack, trace);
+                foreach (var d in SelectedDevices(args, store)) PullOnce(sync, store, d.Id, ack, trace);
                 return 0;
 
             case "sync":
-                return Sync(sync, store, ack, trace, IntervalSeconds(args, settings));
+                return Sync(sync, store, args, ack, trace, IntervalSeconds(args, settings));
 
             case "report":
             {
@@ -202,7 +215,8 @@ public static class Program
             }
 
             case "set-time":
-                Console.WriteLine(sync.SetClock(trace: trace) ? $"Device clock set to {DateTime.Now:HH:mm:ss}." : "The device did not confirm the new time.");
+                foreach (var d in SelectedDevices(args, store))
+                    Console.WriteLine(sync.SetClock(d.Id, trace: trace) ? $"{d.Name}: clock set to {DateTime.Now:HH:mm:ss}." : $"{d.Name}: did not confirm the new time.");
                 return 0;
 
             case "summary":
@@ -293,9 +307,10 @@ public static class Program
             default:
                 Console.WriteLine("""
                     Usage: gozcu <command> [options]
-                      status                     device serial and pending record count
-                      pull                       fetch pending records once
-                      sync [--interval N]        keep fetching every N seconds, Ctrl+C to stop
+                      devices list | devices add <name> <ip> [port] | devices remove <id>
+                      status [--device id]      serial and pending record count, every device unless --device
+                      pull [--device id]        fetch pending records once
+                      sync [--interval N] [--device id]  keep fetching every N seconds, Ctrl+C to stop
                       report [file.csv] [--days N]  daily in/out and hours (default last 7 days)
                       export [file.csv]          every stored scan, with names
                       import-pdks                one-time, read-only copy of PDKS history and names
@@ -307,16 +322,23 @@ public static class Program
         }
     }
 
-    private static void PullOnce(DeviceSync sync, AttendanceStore store, bool ack, bool trace)
+    private static void PullOnce(DeviceSync sync, AttendanceStore store, string deviceId, bool ack, bool trace)
     {
-        var r = sync.PullOnce(ack, trace);
+        var result = sync.PullOnce(deviceId, ack, trace);
+        if (result is null) { Console.WriteLine($"{Now()} unknown device {deviceId}."); return; }
+        if (!result.Ok || result.Result is null)
+        {
+            Console.WriteLine($"{Now()} {result.DeviceName}: failed ({result.Error}).");
+            return;
+        }
+        var r = result.Result;
         if (r.Pending == 0)
         {
-            Console.WriteLine($"{Now()} device {r.Serial}: nothing pending.");
+            Console.WriteLine($"{Now()} {result.DeviceName} ({r.Serial}): nothing pending.");
             return;
         }
         var names = store.GetNames();
-        Console.WriteLine($"{Now()} device {r.Serial}: {r.Pending} pending, {r.Added.Count} new.");
+        Console.WriteLine($"{Now()} {result.DeviceName} ({r.Serial}): {r.Pending} pending, {r.Added.Count} new.");
         foreach (var a in r.Added)
         {
             names.TryGetValue(a.EnrollNumber, out var name);
@@ -324,7 +346,7 @@ public static class Program
         }
     }
 
-    private static int Sync(DeviceSync sync, AttendanceStore store, bool ack, bool trace, int seconds)
+    private static int Sync(DeviceSync sync, AttendanceStore store, string[] args, bool ack, bool trace, int seconds)
     {
         using var stop = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
@@ -332,7 +354,11 @@ public static class Program
         int failures = 0;
         while (!stop.IsCancellationRequested)
         {
-            try { PullOnce(sync, store, ack, trace); failures = 0; }
+            try
+            {
+                foreach (var d in SelectedDevices(args, store)) PullOnce(sync, store, d.Id, ack, trace);
+                failures = 0;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Console.WriteLine($"{Now()} sync failed ({++failures}): {ex.GetBaseException().Message}");
@@ -340,6 +366,44 @@ public static class Program
             stop.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(seconds));
         }
         return 0;
+    }
+
+    // --device <id> picks one device; otherwise every enabled device in the devices table.
+    private static List<DeviceConfig> SelectedDevices(string[] args, AttendanceStore store)
+    {
+        int i = Array.IndexOf(args, "--device");
+        if (i >= 0 && i + 1 < args.Length)
+        {
+            var d = store.GetDevice(args[i + 1]);
+            return d is null ? new() : new() { d };
+        }
+        return store.GetDevices().Where(d => d.Enabled).ToList();
+    }
+
+    private static int Devices(string[] args, AttendanceStore store)
+    {
+        switch (args.Skip(1).FirstOrDefault())
+        {
+            case "add" when args.Length > 3:
+            {
+                var id = Guid.NewGuid().ToString("N")[..12];
+                var port = args.Length > 4 && int.TryParse(args[4], out var p) ? p : 5005;
+                store.SaveDevice(id, args[2], "", args[3], port, enabled: true);
+                Console.WriteLine($"Added device {id} ({args[2]}, {args[3]}:{port}).");
+                return 0;
+            }
+            case "remove" when args.Length > 2:
+                store.DeleteDevice(args[2]);
+                Console.WriteLine("Removed.");
+                return 0;
+            case "list" or null or "":
+                foreach (var d in store.GetDevices())
+                    Console.WriteLine($"{d.Id}  {d.Name,-20} {d.Ip}:{d.Port,-6} {(d.Enabled ? "enabled" : "disabled"),-9} serial {(d.Serial.Length > 0 ? d.Serial : "-")}");
+                return 0;
+            default:
+                Console.WriteLine("devices list | devices add <name> <ip> [port] | devices remove <id>");
+                return 1;
+        }
     }
 
     private static int Names(string[] args, AttendanceStore store)

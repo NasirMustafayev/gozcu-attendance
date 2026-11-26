@@ -52,6 +52,14 @@ builder.Services.AddRazorPages(o =>
 
 var app = builder.Build();
 
+// One-time upgrade for databases created before multi-device support.
+using (var scope = app.Services.CreateScope())
+{
+    var store = scope.ServiceProvider.GetRequiredService<AttendanceStore>();
+    var settings = scope.ServiceProvider.GetRequiredService<AppSettings>();
+    store.MigrateLegacyDevice(settings.DeviceIp, settings.DevicePort);
+}
+
 if (!app.Environment.IsDevelopment()) app.UseExceptionHandler("/Error");
 app.UseStaticFiles();
 app.UseRouting();

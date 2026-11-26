@@ -21,8 +21,12 @@ public static class AppPaths
 public sealed class AppSettings
 {
     public string Language { get; set; } = "en";
+
+    // No longer the live configuration (see the devices table): kept only so a settings.json from before
+    // multi-device support still has something for AttendanceStore.MigrateLegacyDevice to read once.
     public string DeviceIp { get; set; } = "";
     public int DevicePort { get; set; } = 5005;
+
     public int SyncIntervalSeconds { get; set; } = 60;
     public TimeSpan WorkStart { get; set; } = new(9, 0, 0);
     public TimeSpan WorkEnd { get; set; } = new(18, 0, 0);

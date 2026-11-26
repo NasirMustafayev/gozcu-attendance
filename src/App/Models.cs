@@ -33,4 +33,6 @@ public sealed record UnnamedItem(uint Enroll, string Label);
 
 public sealed record NotInRow(string Name, string Shift);
 
+public sealed record DeviceRow(string Name, string Address, string Serial, string LastCheck, string Status, Brush StatusBrush, string Error);
+
 public sealed record DeptItem(int? Id, string Name);
