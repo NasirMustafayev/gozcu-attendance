@@ -20,6 +20,11 @@ public sealed partial class AttendanceStore
         {
             DataSource = dbPath,
             Mode = SqliteOpenMode.ReadWriteCreate,
+            // Pooling can hand back a connection sitting inside an old, never-closed read
+            // transaction, which then keeps seeing a stale snapshot of the database forever.
+            // Every caller already opens and disposes its own connection per call, so there's
+            // no performance reason to pool here, and this guarantees every read is current.
+            Pooling = false,
         }.ToString();
 
         using var conn = Open();
