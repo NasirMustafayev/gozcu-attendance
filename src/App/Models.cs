@@ -16,7 +16,7 @@ public static class VisualTreeExtensions
 
 public sealed record FeedRow(string Time, string Name, string Id, string Method, Brush MethodBack, Brush MethodFore, string Initial);
 
-public sealed record DayRow(string Date, string Id, string Name, string Dept, string Shift, string In, string Out, string Worked, string Late, string Early, string Scans, DateTime DateValue, uint Enroll);
+public sealed record DayRow(string Date, string Id, string Name, string Dept, string Shift, string In, string Out, string Worked, string Late, string Early, string Scans, DateTime DateValue, uint Enroll, bool IsAbsent = false);
 
 public sealed record ScanView(long Key, string When, string Id, string Name, string Method, string Note, string Status, bool IsManual, bool IsVoided, DateTime Time);
 

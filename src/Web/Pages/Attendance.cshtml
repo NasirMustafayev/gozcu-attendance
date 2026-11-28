@@ -9,6 +9,8 @@
 <h1>@T("Attendance")</h1>
 <div class="sub">
     @(Summary ? Loc.F("{0} daily row(s) from {1} scan(s)", Days.Count, Counted.Count)
+                + (Absent.Count(a => a.Status == "Absent") is var absN && absN > 0 ? Loc.F(" · {0} absent", absN) : "")
+                + (Absent.Count(a => a.Status != "Absent") is var noteN && noteN > 0 ? Loc.F(" · {0} holiday/leave", noteN) : "")
               : Loc.F("{0} scan(s)", All.Count) + (All.Count(r => r.IsManual) > 0 ? Loc.F(" · {0} manual", All.Count(r => r.IsManual)) : "")
                 + (All.Count(r => r.Voided) > 0 ? Loc.F(" · {0} voided", All.Count(r => r.Voided)) : ""))
 </div>
@@ -49,26 +51,44 @@
                     @if (CanEditData) { <th class="no-print"></th> }
                 </tr></thead>
                 <tbody>
-                    @foreach (var r in Days)
+                    @foreach (var row in CombinedRows())
                     {
-                        <tr data-href="/Attendance?view=scans&from=@WebApp.Iso(r.Date)&to=@WebApp.Iso(r.Date)&q=@r.Enroll">
-                            <td>@WebApp.Day(r.Date)</td><td>@r.Enroll</td>
-                            <td>@if (r.Name.Length > 0) { <a href="/Profile?person=@r.Enroll" onclick="event.stopPropagation()">@r.Name</a> } else { <text>—</text> }</td>
-                            <td>@(ctx.DeptName(r.Enroll) is { Length: > 0 } dn ? dn : "—")</td><td>@(r.Shift.Length > 0 ? r.Shift : "—")</td>
-                            <td>@r.FirstIn.ToString("HH:mm")</td><td>@(r.LastOut?.ToString("HH:mm") ?? "—")</td>
-                            <td>@WebApp.Hm(r.Worked)</td><td class="@(r.LateMinutes > 0 ? "c-warn" : "")">@WebApp.Min(r.LateMinutes)</td>
-                            <td class="@(r.EarlyLeaveMinutes > 0 ? "c-violet" : "")">@WebApp.Min(r.EarlyLeaveMinutes)</td><td class="num">@r.Punches</td>
-                            @if (CanEditData)
-                            {
-                                <td class="no-print" onclick="event.stopPropagation()">
-                                    <a class="btn small" href="/Attendance?view=scans&from=@WebApp.Iso(r.Date)&to=@WebApp.Iso(r.Date)&q=@r.Enroll">@T("Edit")</a>
-                                </td>
-                            }
-                        </tr>
+                        if (row.Day is { } r)
+                        {
+                            <tr data-href="/Attendance?view=scans&from=@WebApp.Iso(r.Date)&to=@WebApp.Iso(r.Date)&q=@r.Enroll">
+                                <td>@WebApp.Day(r.Date)</td><td>@r.Enroll</td>
+                                <td>@if (r.Name.Length > 0) { <a href="/Profile?person=@r.Enroll" onclick="event.stopPropagation()">@r.Name</a> } else { <text>—</text> }</td>
+                                <td>@(ctx.DeptName(r.Enroll) is { Length: > 0 } dn ? dn : "—")</td><td>@(r.Shift.Length > 0 ? r.Shift : "—")</td>
+                                <td>@r.FirstIn.ToString("HH:mm")</td><td>@(r.LastOut?.ToString("HH:mm") ?? "—")</td>
+                                <td>@WebApp.Hm(r.Worked)</td><td class="@(r.LateMinutes > 0 ? "c-warn" : "")">@WebApp.Min(r.LateMinutes)</td>
+                                <td class="@(r.EarlyLeaveMinutes > 0 ? "c-violet" : "")">@WebApp.Min(r.EarlyLeaveMinutes)</td><td class="num">@r.Punches</td>
+                                @if (CanEditData)
+                                {
+                                    <td class="no-print" onclick="event.stopPropagation()">
+                                        <a class="btn small" href="/Attendance?view=scans&from=@WebApp.Iso(r.Date)&to=@WebApp.Iso(r.Date)&q=@r.Enroll">@T("Edit")</a>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                        else if (row.Absence is { } a)
+                        {
+                            <tr class="@(a.Status == "Absent" ? "row-missing" : "row-note")">
+                                <td>@WebApp.Day(a.Date)</td><td>@a.Enroll</td>
+                                <td><a href="/Profile?person=@a.Enroll">@a.Name</a></td>
+                                <td>@(ctx.DeptName(a.Enroll) is { Length: > 0 } dn ? dn : "—")</td><td>@(a.Shift.Length > 0 ? a.Shift : "—")</td>
+                                <td>@T(a.Status)</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="num">0</td>
+                                @if (CanEditData)
+                                {
+                                    <td class="no-print">
+                                        <a class="btn small" href="/Entry?enroll=@a.Enroll&date=@WebApp.Iso(a.Date)&back=@Uri.EscapeDataString(back)">@T("Add entry")</a>
+                                    </td>
+                                }
+                            </tr>
+                        }
                     }
                 </tbody>
             </table>
-            @if (Days.Count == 0) { <div class="empty">@T("No scans in this period.")</div> }
+            @if (Days.Count == 0 && Absent.Count == 0) { <div class="empty">@T("No scans in this period.")</div> }
         }
         else
         {
@@ -132,9 +152,17 @@
     public List<GozcuStandalone.Device.AttendanceRecord> All { get; set; } = new();
     public List<GozcuStandalone.Device.AttendanceRecord> Counted { get; set; } = new();
     public List<DailyRow> Days { get; set; } = new();
+    public List<AbsenceRow> Absent { get; set; } = new();
 
     private static DateTime WeekStart => DateTime.Today.AddDays(-(((int)DateTime.Today.DayOfWeek + 6) % 7));
     private static DateTime MonthStart => new(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+    // Scanned days and absent days together, newest first, so an absence shows in its right place
+    // in the list instead of being dropped or lumped at the end.
+    public IEnumerable<(DailyRow? Day, AbsenceRow? Absence, DateTime Date, string Name)> CombinedRows() =>
+        Days.Select(d => ((DailyRow?)d, (AbsenceRow?)null, d.Date, d.Name))
+            .Concat(Absent.Select(a => ((DailyRow?)null, (AbsenceRow?)a, a.Date, a.Name)))
+            .OrderByDescending(x => x.Item3).ThenBy(x => x.Item4);
 
     // The current query string with "from"/"to" stripped, so a quick-range link keeps the search/view choice.
     public string QueryKeep()
@@ -160,6 +188,7 @@
         All = Store.GetRange(From, To.AddDays(1), includeVoided: ShowVoided).Where(r => Match(r.EnrollNumber)).ToList();
         Counted = All.Where(r => !r.Voided).ToList();
         Days = ctx.Daily(Counted);
+        Absent = Summary ? Reports.NonPresentDays(ctx, From, To).Where(a => Match(a.Enroll)).ToList() : new();
     }
 
     public void OnGet(string? from, string? to, string? q, string? view, string? voided) => Load(from, to, q, view, voided);
@@ -172,10 +201,16 @@
         if (Summary)
         {
             table.Headers.AddRange(new[] { "Date", "ID", "Name", "Department", "Shift", "First in", "Last out", "Worked", "Late", "Early leave", "Scans" });
-            foreach (var r in Days)
-                table.Rows.Add(new[] { WebApp.Iso(r.Date), r.Enroll.ToString(), r.Name, ctx.DeptName(r.Enroll), r.Shift, r.FirstIn.ToString("HH:mm"),
-                    r.LastOut?.ToString("HH:mm") ?? "", r.Worked == TimeSpan.Zero ? "" : $"{(int)r.Worked.TotalHours}:{r.Worked.Minutes:00}",
-                    r.LateMinutes > 0 ? r.LateMinutes.ToString() : "", r.EarlyLeaveMinutes > 0 ? r.EarlyLeaveMinutes.ToString() : "", r.Punches.ToString() });
+            foreach (var row in CombinedRows())
+            {
+                if (row.Day is { } r)
+                    table.AddRow(new[] { WebApp.Iso(r.Date), r.Enroll.ToString(), r.Name, ctx.DeptName(r.Enroll), r.Shift, r.FirstIn.ToString("HH:mm"),
+                        r.LastOut?.ToString("HH:mm") ?? "", r.Worked == TimeSpan.Zero ? "" : $"{(int)r.Worked.TotalHours}:{r.Worked.Minutes:00}",
+                        r.LateMinutes > 0 ? r.LateMinutes.ToString() : "", r.EarlyLeaveMinutes > 0 ? r.EarlyLeaveMinutes.ToString() : "", r.Punches.ToString() });
+                else if (row.Absence is { } a)
+                    table.AddRow(new[] { WebApp.Iso(a.Date), a.Enroll.ToString(), a.Name, ctx.DeptName(a.Enroll), a.Shift, a.Status, "", "", "", "", "0" },
+                        a.Status == "Absent" ? ReportRowKind.Missing : ReportRowKind.Normal);
+            }
         }
         else
         {

@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private bool _loadingDepts;
 
     private List<DailyRow> _summaryRows = new();
+    private List<AbsenceRow> _absentRows = new();
     private List<AttendanceRecord> _scanRows = new();
     private bool _busy;
     private bool _ready;
@@ -645,11 +646,12 @@ public partial class MainWindow : Window
         var counted = all.Where(r => !r.Voided).ToList();
         _scanRows = counted;
         _summaryRows = ctx.Daily(counted);
+        _absentRows = summary ? Reports.NonPresentDays(ctx, from, to.AddDays(-1)).Where(a => Match(a.Enroll)).ToList() : new();
 
         DayGrid.Visibility = summary ? Visibility.Visible : Visibility.Collapsed;
         ScanGrid.Visibility = summary ? Visibility.Collapsed : Visibility.Visible;
 
-        DayGrid.ItemsSource = _summaryRows.Select(r => new DayRow(
+        var dayRows = _summaryRows.Select(r => new DayRow(
             Loc.Dates(r.Date.ToString("ddd d MMM", CultureInfo.InvariantCulture)),
             r.Enroll.ToString(),
             r.Name.Length > 0 ? r.Name : "—",
@@ -661,7 +663,16 @@ public partial class MainWindow : Window
             r.LateMinutes > 0 ? Loc.F("{0} min", r.LateMinutes) : "—",
             r.EarlyLeaveMinutes > 0 ? Loc.F("{0} min", r.EarlyLeaveMinutes) : "—",
             r.Punches.ToString(),
-            r.Date, r.Enroll)).ToList();
+            r.Date, r.Enroll));
+        var absenceRows = _absentRows.Select(a => new DayRow(
+            Loc.Dates(a.Date.ToString("ddd d MMM", CultureInfo.InvariantCulture)),
+            a.Enroll.ToString(),
+            a.Name.Length > 0 ? a.Name : "—",
+            ctx.DeptName(a.Enroll) is { Length: > 0 } dn ? dn : "—",
+            a.Shift.Length > 0 ? a.Shift : "—",
+            Loc.T(a.Status), "—", "—", "—", "—", "0",
+            a.Date, a.Enroll, IsAbsent: a.Status == "Absent"));
+        DayGrid.ItemsSource = dayRows.Concat(absenceRows).OrderByDescending(r => r.DateValue).ThenBy(r => r.Name).ToList();
 
         ScanGrid.ItemsSource = all.OrderByDescending(r => r.Timestamp).Select(r => new ScanView(
             r.Id,
@@ -673,10 +684,12 @@ public partial class MainWindow : Window
             r.Voided ? Loc.T("Voided") : "",
             r.IsManual, r.Voided, r.Timestamp)).ToList();
 
-        var empty = summary ? _summaryRows.Count == 0 : all.Count == 0;
+        var empty = summary ? _summaryRows.Count == 0 && _absentRows.Count == 0 : all.Count == 0;
         AttendanceEmpty.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         AttendanceCount.Text = summary
             ? Loc.F("{0} daily row(s) from {1} scan(s)", _summaryRows.Count, counted.Count)
+              + (_absentRows.Count(a => a.Status == "Absent") is var absN && absN > 0 ? Loc.F(" · {0} absent", absN) : "")
+              + (_absentRows.Count(a => a.Status != "Absent") is var noteN && noteN > 0 ? Loc.F(" · {0} holiday/leave", noteN) : "")
             : Loc.F("{0} scan(s)", all.Count) + (all.Count(r => r.IsManual) > 0 ? Loc.F(" · {0} manual", all.Count(r => r.IsManual)) : "")
               + (all.Count(r => r.Voided) > 0 ? Loc.F(" · {0} voided", all.Count(r => r.Voided)) : "")
               + Loc.T(" · right-click a scan to void or restore it");
@@ -716,6 +729,14 @@ public partial class MainWindow : Window
         {
             ShowToast("Those entries already exist.");
         }
+    }
+
+    // Tints an absent day's row red, the same way the web app and the Absences report do.
+    private void DayGrid_LoadingRow(object sender, DataGridRowEventArgs e)
+    {
+        e.Row.Background = e.Row.Item is DayRow { IsAbsent: true }
+            ? new SolidColorBrush(Color.FromRgb(0xFE, 0xF2, 0xF2))
+            : Brushes.Transparent;
     }
 
     private void DayGrid_DoubleClick(object sender, MouseButtonEventArgs e)
@@ -826,6 +847,12 @@ public partial class MainWindow : Window
         if (summary)
         {
             table.Headers.AddRange(new[] { "Date", "ID", "Name", "Department", "Shift", "First in", "Last out", "Worked", "Late (min)", "Early leave (min)", "Scans" });
+            foreach (var a in _absentRows)
+                table.AddRow(new[]
+                {
+                    a.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), a.Enroll.ToString(), a.Name, ctx.DeptName(a.Enroll), a.Shift,
+                    a.Status, "", "", "", "", "0",
+                }, a.Status == "Absent" ? ReportRowKind.Missing : ReportRowKind.Normal);
             foreach (var r in _summaryRows)
                 table.Rows.Add(new[]
                 {

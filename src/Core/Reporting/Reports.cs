@@ -103,7 +103,7 @@ public sealed class ReportContext
         DailyReport.Build(scans, Names, Settings.WorkStart, Settings.WorkEnd, Shifts);
 }
 
-public sealed record AbsenceRow(DateTime Date, uint Enroll, string Name, string Shift);
+public sealed record AbsenceRow(DateTime Date, uint Enroll, string Name, string Shift, string Status = "Absent");
 
 // Quick facts about one person for one month: how reliably they show up, and how.
 public sealed record PersonProfile(
@@ -145,6 +145,34 @@ public static class Reports
                 if (ctx.Holidays.ContainsKey(d) || ctx.Leaves.OnLeave(d, enroll) is not null) continue;
                 if (present.Contains((d, enroll))) continue;
                 result.Add(new AbsenceRow(d, enroll, name, shift!.Name));
+            }
+        }
+        return result.OrderByDescending(a => a.Date).ThenBy(a => a.Name).ToList();
+    }
+
+    // Same no-scan days as Absences, but also includes holidays and approved leave with their own status
+    // label instead of skipping them, so the Attendance page can show why someone has no scan that day.
+    public static List<AbsenceRow> NonPresentDays(ReportContext ctx, DateTime from, DateTime to)
+    {
+        var last = to.Date >= DateTime.Today ? DateTime.Today.AddDays(-1) : to.Date;
+        var result = new List<AbsenceRow>();
+        if (last < from.Date) return result;
+
+        var present = ctx.Scans(from.Date, last.AddDays(1))
+            .Select(r => (r.Timestamp.Date, r.EnrollNumber)).ToHashSet();
+
+        foreach (var (enroll, name, _) in ctx.ActivePeople)
+        {
+            if (ctx.AlwaysPresent.IsAlwaysPresent(enroll)) continue;
+            for (var d = from.Date; d <= last; d = d.AddDays(1))
+            {
+                if (!ctx.Shifts.IsWorkday(d, enroll, out var shift)) continue;
+                if (present.Contains((d, enroll))) continue;
+
+                string status = ctx.Holidays.TryGetValue(d, out var holiday) ? Loc.F("Holiday: {0}", holiday)
+                    : ctx.Leaves.OnLeave(d, enroll) is { } leave ? Loc.F("Leave: {0}", leave)
+                    : Loc.T("Absent");
+                result.Add(new AbsenceRow(d, enroll, name, shift!.Name, status));
             }
         }
         return result.OrderByDescending(a => a.Date).ThenBy(a => a.Name).ToList();
