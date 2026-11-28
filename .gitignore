@@ -19,3 +19,6 @@ Thumbs.db
 *.db-journal
 *.log
 web-keys/
+
+# Private Obsidian vault (Claude session notes) - not for GitHub
+/vault/
